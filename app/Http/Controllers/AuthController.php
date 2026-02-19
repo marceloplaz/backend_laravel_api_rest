@@ -3,10 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+use App\Http\Resources\UserResource;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Validator;
+
 
 class AuthController extends Controller
 {
@@ -27,30 +29,37 @@ class AuthController extends Controller
 
         return response()->json([
             "message" => "Usuario registrado con éxito",
-            "status"  => 201
+            "user"    => new UserResource($user)
         ], 201);
+       
     } 
 
     public function funLogin(Request $request)
-    {
-        $credentials = $request->validate([
-            "email" => "required|email",
-            "password" => "required"
-        ]);
+{
+    $credentials = $request->validate([
+        "email" => "required|email",
+        "password" => "required"
+    ]);
 
-        if (!Auth::attempt($credentials)) {
-            return response()->json(["message" => "Credenciales incorrectas"], 401);
-        }
-
-        $user = User::where('email', $request->email)->firstOrFail();
-        $token = $user->createToken('auth_token')->plainTextToken;
-
+    // Intentamos autenticar
+    if (!Auth::attempt($credentials)) {
         return response()->json([
-            "access_token" => $token,
-            "token_type" => "Bearer",
-            "user" => $user
-        ]);
+            "message" => "Credenciales incorrectas"
+        ], 401);
     }
+
+    // Obtenemos el usuario autenticado (evitamos la segunda consulta a la DB)
+    $user = Auth::user(); 
+    
+    // Creamos el token
+    $token = $user->createToken('auth_token')->plainTextToken;
+
+    return response()->json([
+        "access_token" => $token,
+        "token_type" => "Bearer",
+        "user" => new UserResource($user)
+    ], 200);
+}
 
     public function funprofile(Request $request)
     {
