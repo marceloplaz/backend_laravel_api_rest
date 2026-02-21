@@ -62,9 +62,10 @@ class AuthController extends Controller
 }
 
     public function funprofile(Request $request)
-    {
-        return response()->json($request->user());
-    }
+{
+    $user = $request->user()->load('persona'); // Cargamos la relación
+    return new UserResource($user);
+}
 
     public function funlogout(Request $request)
     {

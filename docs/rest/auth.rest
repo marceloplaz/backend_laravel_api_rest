@@ -3,7 +3,7 @@ Accept: application/json
 Content-Type: application/json
 
 {
-    "name": "admin",
+    "name": "admin2",
     "email": "admin@gmail.com",
     "password": "admin123",
     "password2": "admin123"
@@ -23,4 +23,47 @@ Content-Type: application/json
 
 GET http://localhost:8000/api/v1/auth/profile
 Accept: application/json
+Authorization: Bearer 6|qJeMFOllikpAJhsqlNRTM9rwA3qwiI2OIAKetPdw3929ec03
+
+### LOGOUT
+POST http://localhost:8000/api/v1/auth/logout
+Accept: application/json
 Authorization: Bearer 3|6oy8G59eRJQFEhAH1HzE5dvDGEeP2oXU0HFdiUGm448831f2
+
+### persona
+POST http://localhost:8000/api/v1/persona
+Accept: application/json
+Authorization: Bearer 6|qJeMFOllikpAJhsqlNRTM9rwA3qwiI2OIAKetPdw3929ec03
+Content-Type: application/json
+
+{
+    "nombre_completo": "carmen rosa cari figueroa",
+    "carnet_identidad": "5011070",
+    "fecha_nacimiento": "1990-05-15",
+    "genero": "Femenino",
+    "telefono": "78708800",
+    "direccion": "B/Paraiso",
+    "tipo_trabajador": "medico",
+    "nacionalidad": "Boliviana",
+    "tipo_salario": "TGN",
+    "numero_tipo_salario": "5626"
+}
+
+### servicios
+POST http://localhost:8000/api/v1/servicios
+Accept: application/json
+Authorization: Bearer 7|bb6ziYksQDfnKZYG4peaaIHtkNMNT0s0sdYRzL3wc763b9cd
+Content-Type: application/json
+
+{
+    "nombre": "Emergencias" 
+}
+// servicios
+
+### servicios
+GET  http://localhost:8000/api/v1/servicios
+Accept: application/json
+Authorization: Bearer 7|bb6ziYksQDfnKZYG4peaaIHtkNMNT0s0sdYRzL3wc763b9cd
+
+
+
