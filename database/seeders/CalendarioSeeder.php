@@ -2,36 +2,61 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
+use App\Models\Gestion;
+use App\Models\Mes;
+use App\Models\Semana;
+use Carbon\Carbon;
 
 class CalendarioSeeder extends Seeder
 {
-    /**
-     * Run the database seeds.
-     */
-    public function asignarTurno(Request $request) {
-    $fecha = Carbon::parse($request->fecha); // Ej: "2026-02-20"
+    public function run(): void
+    {
+        // 1. Tabla 'gestiones': columnas 'año' y 'activo'
+        $gestion = Gestion::create([
+            'año'    => '2026', 
+            'activo' => true
+        ]);
 
-    // Buscamos automáticamente en qué semana y mes cae esa fecha
-    $semana = Semana::where('fecha_inicio', '<=', $fecha->format('Y-m-d'))
-                    ->where('fecha_fin', '>=', $fecha->format('Y-m-d'))
-                    ->first();
+        $nombresMeses = [
+            1 => 'Enero', 2 => 'Febrero', 3 => 'Marzo', 4 => 'Abril',
+            5 => 'Mayo', 6 => 'Junio', 7 => 'Julio', 8 => 'Agosto',
+            9 => 'Septiembre', 10 => 'Octubre', 11 => 'Noviembre', 12 => 'Diciembre'
+        ];
 
-    if (!$semana) {
-        return response()->json(['error' => 'La fecha no está dentro del calendario configurado'], 400);
+        foreach ($nombresMeses as $numero => $nombre) {
+            // 2. Tabla 'meses': columnas 'nombre' y 'numero_mes'
+            $mes = Mes::create([
+                'nombre'     => $nombre,
+                'numero_mes' => $numero,
+                'gestion_id' => $gestion->id
+            ]);
+
+            // 3. Generar Semanas para la tabla 'semanas'
+            $inicioMes = Carbon::create(2026, $numero, 1)->startOfMonth();
+            $finMes = Carbon::create(2026, $numero, 1)->endOfMonth();
+            $fechaCaminante = $inicioMes->copy();
+            $contadorSemana = 1;
+
+            while ($fechaCaminante <= $finMes) {
+                $inicioSemana = $fechaCaminante->copy();
+                $finSemana = $fechaCaminante->copy()->endOfWeek(Carbon::SUNDAY);
+                
+                if ($finSemana > $finMes) {
+                    $finSemana = $finMes->copy();
+                }
+
+                // Tabla 'semanas': columnas 'numero_semana', 'fecha_inicio', 'fecha_fin'
+                Semana::create([
+                    'numero_semana' => $contadorSemana,
+                    'fecha_inicio'  => $inicioSemana->format('Y-m-d'),
+                    'fecha_fin'     => $finSemana->format('Y-m-d'),
+                    'mes_id'        => $mes->id
+                ]);
+
+                $fechaCaminante = $finSemana->addDay();
+                $contadorSemana++;
+            }
+        }
     }
-
-    // Creamos el registro con los IDs automáticos
-    TurnoAsignado::create([
-        'usuario_id' => $request->usuario_id,
-        'servicio_id' => $request->servicio_id,
-        'turno_id'   => $request->turno_id,
-        'fecha'      => $fecha->format('Y-m-d'),
-        'semana_id'  => $semana->id,
-        'mes_id'     => $semana->mes_id,
-        'gestion_id' => $semana->mes->gestion_id,
-        'estado'     => 'programado'
-    ]);
-}
 }

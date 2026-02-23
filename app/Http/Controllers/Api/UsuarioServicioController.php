@@ -30,12 +30,12 @@ class UsuarioServicioController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-            'usuario_id' => 'required|exists:user,id',
-            'servicio_id' => 'required|exists:servicio,id',
-            'fecha_inicio' => 'required|date',
-            'fecha_fin' => 'nullable|date',
-            'estado' => 'nullable|string'
-        ]);
+    'usuario_id' => 'required|exists:users,id', // 'users' en plural
+    'servicio_id' => 'required|exists:servicios,id', // 'servicios' en plural
+    'fecha_inicio' => 'required|date',
+    'fecha_fin' => 'nullable|date|after_or_equal:fecha_inicio', // Agregué una validación lógica
+    'estado' => 'nullable|string'
+]);
 
         $usuarioServicio = UsuarioServicio::create($request->all());
 

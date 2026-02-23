@@ -7,26 +7,25 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration
 {
     /**
-     * Run the migrations.
+     * Ejecuta la migración para la tabla intermedia role_user.
      */
     public function up(): void
     {
         Schema::create('role_user', function (Blueprint $table) {
             $table->id();
-            $table->bigInteger("user_id")->unsigned();
-            $table->bigInteger("role_id")->unsigned();
-
-             //forenign key
-            $table->foreign("user_id")->references("id")->on('users');
-            $table->foreign("role_id")->references("id")->on('roles');
-
+            
+            // Relación con la tabla personas (según tu imagen usas 'personas' en lugar de 'users')
+            $table->foreignId('user_id')->constrained('users')->onDelete('cascade');
+            
+            // Relación con la tabla roles
+            $table->foreignId('role_id')->constrained('roles')->onDelete('cascade');
             
             $table->timestamps();
         });
     }
 
     /**
-     * Reverse the migrations.
+     * Revierte la migración.
      */
     public function down(): void
     {

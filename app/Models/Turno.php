@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use App\Models\Categoria;
 use App\Models\Servicio;
 
@@ -28,4 +29,6 @@ class Turno extends Model
         );
     }
 }
+
+
 

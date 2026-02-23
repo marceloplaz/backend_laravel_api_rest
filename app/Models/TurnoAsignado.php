@@ -8,7 +8,7 @@ class TurnoAsignado extends Model
 {
     // Laravel por defecto busca "turno_asignados", 
     // pero tu migración dice "turno_asignados" (fíjate en el plural/singular)
-    protected $table = 'turno_asignados'; 
+    protected $table = 'turnos_asignados'; 
 
     protected $fillable = [
     'usuario_id', // O user_id según tu migración

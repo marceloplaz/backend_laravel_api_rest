@@ -11,81 +11,76 @@ use App\Http\Controllers\Api\ServicioTurnoController;
 use App\Http\Controllers\Api\UsuarioServicioController;
 use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\TurnoAsignadoController;
-use App\Http\Controllers\Api\CategoriaController; // Para que la ruta de categorías no falle
+use App\Http\Controllers\Api\CategoriaController;
+use App\Http\Controllers\Api\IncidenciaController;
 
 Route::prefix("v1")->group(function(){
 
-    // =========================
-    // AUTH
-    // =========================
-    Route::prefix("auth")->group(function(){
-        Route::post("/register", [AuthController::class, "funRegister"]);
-        Route::post("/login", [AuthController::class, "funLogin"]);
+    // 🔓 RUTAS PÚBLICAS
+    Route::post("/auth/register", [AuthController::class, "funRegister"]);
+    Route::post("/auth/login", [AuthController::class, "funLogin"]);
 
-        Route::middleware('auth:sanctum')->group(function(){
-            Route::post("/logout", [AuthController::class, "funlogout"]);
-            Route::get("/profile", [AuthController::class, "funprofile"]);
-        });
-    });
-
-    // =========================
-    // RUTAS PROTEGIDAS
-    // =========================
+    // 🔒 RUTAS PROTEGIDAS POR TOKEN (SANCTUM)
     Route::middleware('auth:sanctum')->group(function(){
+        
+        // --- Perfil y Sesión ---
+        Route::get("/auth/profile", [AuthController::class, "funprofile"]);
+        Route::post("/auth/logout", [AuthController::class, "funlogout"]);
 
-        // ========= PERSONAS =========
-        Route::get('/personas', [PersonaController::class, 'index']);
-        Route::get('/persona/{id}', [PersonaController::class, 'show']);
-        Route::post('/persona', [PersonaController::class, 'store']);
-        Route::put('/persona/{id}', [PersonaController::class, 'update']);
-        Route::delete('/persona/{id}', [PersonaController::class, 'destroy']);
+        // --- 🏗️ ADMINISTRACIÓN DE SISTEMA (Solo Super Admin / Admin) ---
+        // Usamos el alias 'jugadordeunbit' con el permiso 'admin_system'
+        Route::middleware('jugadordeunbit:admin_system')->group(function() {
+            Route::apiResource('persona', PersonaController::class);
+            Route::apiResource('usuarios', UserController::class);
+            Route::apiResource('categorias', CategoriaController::class);
+            Route::apiResource('servicios', ServicioController::class);
+            Route::apiResource('turnos', TurnoController::class);
+            Route::apiResource('usuario-servicio', UsuarioServicioController::class);
+            Route::put('/usuarios/{id}/password', [UserController::class, 'updatePassword'])
+            ->middleware('jugadordeunbit:gestionar_seguridad');
+            Route::post('/auth/generate-action-token', [AuthController::class, 'generateToken'])
+            ->middleware('jugadordeunbit:gestionar_seguridad');
+            Route::post("/auth/update-initial-password", [AuthController::class, "updateFirstPassword"]);
+        });
 
-        // ========= SERVICIOS =========
-        Route::apiResource('servicios', ServicioController::class);
+        // --- 📝 GESTIÓN DE INCIDENCIAS (Estilo Google Keep) ---
+        // Ver notas: Cualquier usuario autenticado puede verlas
+        Route::get('incidencias', [IncidenciaController::class, 'index']);
+        
+        // Crear nota de falla: Solo personal con permiso de reporte
+        Route::post('incidencias', [IncidenciaController::class, 'store'])
+            ->middleware('jugadordeunbit:reportar_incidencia');
+            
+        // Marcar como resuelto: Solo el Responsable Técnico
+        Route::put('incidencias/{id}/resolver', [IncidenciaController::class, 'resolver'])
+            ->middleware('jugadordeunbit:resolver_incidencia');
 
-        // ========= TURNOS =========
-        Route::apiResource('turnos', TurnoController::class);
+        
+        // --- 📅 CONFIGURACIÓN DE TURNOS EN SERVICIOS (Jefes de Área) ---
+        Route::prefix('servicios/{servicioId}/turnos')->middleware('jugadordeunbit:gestionar_servicios')->group(function () {
+            Route::post('/', [ServicioTurnoController::class, 'asignar']);
+            Route::put('/sync', [ServicioTurnoController::class, 'sync']);
+            Route::delete('/{turnoId}', [ServicioTurnoController::class, 'quitar']);
+        });
 
-        // ========= SERVICIO ↔ TURNO =========
+        // --- 👥 LÓGICA DE ASIGNACIÓN A PERSONAL (Jerarquías) ---
+        Route::prefix('turnos-asignados')->group(function () {
+            
+            // Asignar turnos a subordinados (Jefes de Servicio/Enfermería/Generales)
+            Route::post('/', [TurnoAsignadoController::class, 'store'])
+                ->middleware('jugadordeunbit:asignar_turnos'); 
 
-        // Asignar un turno a un servicio
-        Route::post(
-            'servicios/{servicioId}/turnos',
-            [ServicioTurnoController::class, 'asignar']
-        );
+            // Ver calendario del equipo (Jefes)
+            Route::get('/servicio/{servicioId}/equipo', [TurnoAsignadoController::class, 'verTurnosPorJerarquia'])
+                ->middleware('jugadordeunbit:ver_equipo');
 
-        // Sincronizar múltiples turnos
-        Route::put(
-            'servicios/{servicioId}/turnos/sync',
-            [ServicioTurnoController::class, 'sync']
-        );
+            // Descarga de reportes (Admin / Jefes)
+            Route::get('/reporte/{mes_id}', [TurnoAsignadoController::class, 'reporteMensual'])
+                ->middleware('jugadordeunbit:ver_reportes');
 
-        // Quitar turno de un servicio
-        Route::delete(
-            'servicios/{servicioId}/turnos/{turnoId}',
-            [ServicioTurnoController::class, 'quitar']
-        );
-
-        Route::apiResource('categorias', CategoriaController::class);
+            // 🏥 Uso común: Cualquier empleado logueado ve su propio calendario
+            Route::get('/mis-turnos', [TurnoAsignadoController::class, 'misTurnos']); 
+        });
+   
     });
-
-    
-
-    Route::prefix('usuario-servicio')->group(function () {
-    Route::get('/', [UsuarioServicioController::class, 'index']);
-    Route::post('/', [UsuarioServicioController::class, 'store']);
-    Route::get('/{id}', [UsuarioServicioController::class, 'show']);
-    Route::put('/{id}', [UsuarioServicioController::class, 'update']);
-    Route::delete('/{id}', [UsuarioServicioController::class, 'destroy']);
-});
-// ========= USUARIOS (CRUD) =========
-Route::apiResource('usuarios', UserController::class);
-
-// ========= TURNOS ASIGNADOS (Lógica de Calendario) =========
-Route::prefix('turnos-asignados')->group(function () {
-    Route::post('/', [TurnoAsignadoController::class, 'store']); // Registrar turno
-    Route::get('/mis-turnos', [TurnoAsignadoController::class, 'misTurnos']); // Turnos del usuario logueado
-    Route::get('/reporte/{mes_id}', [TurnoAsignadoController::class, 'reporteMensual']); // Reportes
-});
-
 });

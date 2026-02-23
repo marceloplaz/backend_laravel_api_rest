@@ -9,14 +9,13 @@ Content-Type: application/json
     "password2": "admin123"
 }
 ###   login
-
 POST http://localhost:8000/api/v1/auth/login
 Accept: application/json
 Content-Type: application/json
 
 {
-    "email": "admin@gmail.com",
-    "password": "admin123"
+    "email": "medico@test.com",
+    "password": "password" 
 }
 
 ### profile
@@ -65,5 +64,62 @@ GET  http://localhost:8000/api/v1/servicios
 Accept: application/json
 Authorization: Bearer 7|bb6ziYksQDfnKZYG4peaaIHtkNMNT0s0sdYRzL3wc763b9cd
 
+// asignar turno
+### Variables
+POST http://localhost:8000/api/v1/turnos-asignados
+
+Authorization: Bearer {2|Vzqo9kPhWpi6LrrrgIDvAmfF0dpVpdETKT15Hyh8b4494a6f}
+Content-Type: application/json
+Accept: application/json
+
+{
+    "servicio_id": 5, 
+    "turno_id": 1,
+    "fecha": "2026-03-01",
+    "observacion": "Asignación de prueba para Dr. García"
+}
+### Paso 1: Login para obtener el Token
+POST http://localhost:8000/api/v1/auth/login
+Content-Type: application/json
+
+{
+    "email": "medico@test.com",
+    "password": "password" 
+}
 
 
+### Autorizar el Turno 1 (Médico) en el Servicio 1 (Hemodiálisis)
+POST http://localhost:8000/api/v1/servicios/1/turnos
+Authorization: Bearer 4|fcxYUwtjYOBubxIdkm4VHeXuvUWe3g38jwAPcKcXf9fbd476
+Content-Type: application/json
+Accept: application/json
+
+{
+    "turno_id": 1
+}
+### Copia el "access_token" de la respuesta y pégalo abajo
+
+### Paso 2: Probar el registro de un turno
+POST http://localhost:8000/api/v1/turnos-asignados
+Authorization: Bearer 4|fcxYUwtjYOBubxIdkm4VHeXuvUWe3g38jwAPcKcXf9fbd476
+Content-Type: application/json
+Accept: application/json
+
+{
+    "servicio_id": 1,
+    "turno_id": 1,
+    "fecha": "2026-02-23",
+    "observacion": "Prueba de sistema"
+}   
+
+### Paso 2: Probar el registro de un turno
+POST http://localhost:8000/api/v1/turnos-asignados
+Authorization: Bearer 4|fcxYUwtjYOBubxIdkm4VHeXuvUWe3g38jwAPcKcXf9fbd476
+Content-Type: application/json
+
+{
+    "servicio_id": 1,
+    "turno_id": 1,
+    "fecha": "2026-02-23",
+    "observacion": "Probando con el nombre de tabla corregido"
+}

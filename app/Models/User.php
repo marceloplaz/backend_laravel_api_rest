@@ -44,19 +44,19 @@ class User extends Authenticatable
     }
 
     // 🔷 Relación con Roles (RBAC)
-    public function roles()
-    {
-        return $this->belongsToMany(Role::class);
-    }
+   public function hasRole(string $role): bool
+{
+    return $this->roles->where('name', $role)->isNotEmpty();
+}
 
     // 🔷 Verificación de permiso
-    public function hasPermission(string $permission): bool
-    {
-        return $this->roles()
-            ->whereHas('permissions', function ($query) use ($permission) {
-                $query->where('name', $permission);
-            })->exists();
-    }
+   public function hasPermission(string $permission): bool
+{
+    // Esto carga los permisos una sola vez y luego busca en la colección en memoria
+    return $this->roles->flatMap->permissions->pluck('name')->contains($permission);
+}
+
+
     public function servicios()
 {
     return $this->belongsToMany(Servicio::class, 'usuario_servicios');

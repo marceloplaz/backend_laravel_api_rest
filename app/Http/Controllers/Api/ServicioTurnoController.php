@@ -8,35 +8,31 @@ use Illuminate\Http\Request;
 
 class ServicioTurnoController extends Controller
 {
-    public function asignar(Request $request, $servicioId)
-    {
-        $request->validate([
-            'turno_id' => 'required|exists:turnos,id'
-        ]);
+public function asignar(Request $request, $servicioId)
+{
+    $servicio = Servicio::findOrFail($servicioId);
+    // Esto es lo que llena la tabla servicio_turno
+    $servicio->turnos()->syncWithoutDetaching([$request->turno_id]);
 
-        $servicio = Servicio::findOrFail($servicioId);
+    return response()->json(['message' => 'Turno autorizado en este servicio']);
+}
 
-        $servicio->turnos()->attach($request->turno_id);
+ 
+public function sync(Request $request, $servicioId)
+{
+    $request->validate([
+        'turnos' => 'required|array',
+        'turnos.*' => 'exists:turnos,id' // Validar cada ID dentro del array
+    ]);
 
-        return response()->json([
-            'message' => 'Turno asignado correctamente'
-        ]);
-    }
+    $servicio = Servicio::findOrFail($servicioId);
+    $servicio->turnos()->sync($request->turnos);
 
-    public function sync(Request $request, $servicioId)
-    {
-        $request->validate([
-            'turnos' => 'required|array'
-        ]);
-
-        $servicio = Servicio::findOrFail($servicioId);
-
-        $servicio->turnos()->sync($request->turnos);
-
-        return response()->json([
-            'message' => 'Turnos sincronizados correctamente'
-        ]);
-    }
+    return response()->json([
+        'message' => 'Turnos sincronizados correctamente',
+        'data' => $servicio->load('turnos') // Cargamos los turnos para devolverlos
+    ]);
+}
 
     public function quitar($servicioId, $turnoId)
     {

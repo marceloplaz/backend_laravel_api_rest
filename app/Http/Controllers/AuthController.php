@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Validator;
 
 
 class AuthController extends Controller
+
 {
     public function funRegister(Request $request)
     { 
@@ -41,30 +42,41 @@ class AuthController extends Controller
         "password" => "required"
     ]);
 
-    // Intentamos autenticar
     if (!Auth::attempt($credentials)) {
-        return response()->json([
-            "message" => "Credenciales incorrectas"
-        ], 401);
+        return response()->json(["message" => "Usuario o contraseña no coinciden"], 401);
     }
 
-    // Obtenemos el usuario autenticado (evitamos la segunda consulta a la DB)
     $user = Auth::user(); 
-    
-    // Creamos el token
     $token = $user->createToken('auth_token')->plainTextToken;
+
+    // Preparamos el mensaje según el estado del usuario
+    $mensaje = "¡Bienvenido, " . $user->name . "!";
+    if ($user->must_change_password) {
+        $mensaje = "Hola " . $user->name . ". Por seguridad, recuerde cambiar su contraseña inicial por una nueva.";
+    }
 
     return response()->json([
         "access_token" => $token,
-        "token_type" => "Bearer",
-        "user" => new UserResource($user)
+        "token_type"   => "Bearer",
+        "user"         => new UserResource($user),
+        "must_change_password" => (bool)$user->must_change_password,
+        "message"      => $mensaje // Este mensaje lo muestras en un cartelito (toast)
     ], 200);
 }
 
-    public function funprofile(Request $request)
+ public function funprofile(Request $request)
 {
-    $user = $request->user()->load('persona'); // Cargamos la relación
-    return new UserResource($user);
+    $user = $request->user();
+    
+    // Si el frontend pide el perfil, incluimos una nota de aviso
+    $aviso = $user->must_change_password 
+             ? "Recuerde: Aún tiene la contraseña asignada por el hospital. Cámbiela pronto por su seguridad." 
+             : "Su cuenta está protegida correctamente.";
+
+    return [
+        "data" => new UserResource($user),
+        "aviso_seguridad" => $aviso
+    ];
 }
 
     public function funlogout(Request $request)
