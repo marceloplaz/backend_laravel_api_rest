@@ -1,0 +1,36 @@
+
+### 1. asigna usuario a su servicio
+POST http://localhost:8000/api/v1/usuario-servicio
+Authorization: Bearer 18|mUvCUjB78YDW53oK3Jr1JpIK4k8wXaGGrY0m76ZS47aa60bc
+Content-Type: application/json
+Accept: application/json
+
+{
+    "usuario_id": 1,
+    "servicio_id": 1,
+    "fecha_ingreso": "2026-02-26",
+    "descripcion_usuario_servicio": "Asignacio permanente",
+    "estado": true
+}
+### 1. el metodo get me devuelve todos los usuarios asignados al servicio
+GET http://localhost:8000/api/v1/usuario-servicio
+Authorization: Bearer 15|sMReBBjh8NX67yS2Vk9v0wN4ATUBegTnIL7Cle4G797f211d
+Accept: application/json
+
+### Filtrar asignaciones por un Usuario específico (ejemplo ID 9)
+GET http://localhost:8000/api/v1/usuario-servicio?usuario_id=9
+Authorization: Bearer 14|gNGm2XDPbgLgUMXHX1eYas8n0uc3w3nxsgbX31kn1ca27d63
+Accept: application/json
+
+### Filtrar asignaciones por un Servicio específico (ejemplo ID 1)
+GET http://localhost:8000/api/v1/usuario-servicio?servicio_id=1
+Authorization: Bearer 14|gNGm2XDPbgLgUMXHX1eYas8n0uc3w3nxsgbX31kn1ca27d63
+Accept: application/json
+
+GET http://localhost:8000/api/v1/usuario-servicio
+Authorization: Bearer 15|sMReBBjh8NX67yS2Vk9v0wN4ATUBegTnIL7Cle4G797f211d
+Accept: application/json
+### Filtrar asignaciones por un Usuario específico (ejemplo ID 9)
+GET http://localhost:8000/api/v1/usuario-servicio?usuario_id=10
+Authorization: Bearer 15|sMReBBjh8NX67yS2Vk9v0wN4ATUBegTnIL7Cle4G797f211d
+Accept: application/json

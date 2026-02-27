@@ -1,0 +1,35 @@
+### Registro Maestro: Usuario + Persona + Rol
+POST http://localhost:8000/api/v1/usuarios
+Authorization: Bearer 13|1v9ffDibWG2GBqSzibhRIigdmhzGdUM6A4BIIgotd0ca48aa
+Content-Type: application/json
+Accept: application/json
+
+{
+    "name": "elena aguirre",
+    "email": "elenaaguirre@gmail.com",
+    "password": "elena123",
+    "password_confirmation": "elena123",
+    "categoria_id": 1,
+    "roles": [8],
+    "persona": {
+        "nombre_completo": "elena",
+        "carnet_identidad": "566892",
+        "fecha_nacimiento": "1990-06-23",
+        "genero": "F",
+        "telefono": "7393010",
+        "direccion": "B/paraiso",
+        "tipo_trabajador": "enfermera",
+        "nacionalidad": "Boliviana",
+        "tipo_salario": "SUS",
+        "numero_tipo_salario": "67849"
+    }
+}
+### Registro Maestro: Usuario + Persona + Rol + CAMBIAR CATEGORIA
+PUT http://localhost:8000/api/v1/usuarios/13
+Authorization: Bearer 13|1v9ffDibWG2GBqSzibhRIigdmhzGdUM6A4BIIgotd0ca48aa
+Content-Type: application/json
+Accept: application/json
+
+{
+    "categoria_id": 2
+}

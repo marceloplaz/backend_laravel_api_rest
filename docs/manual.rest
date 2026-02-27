@@ -1,0 +1,26 @@
+### Registro Maestro: Usuario + Persona + Rol
+POST http://localhost:8000/api/v1/usuarios
+Authorization: Bearer 13|1v9ffDibWG2GBqSzibhRIigdmhzGdUM6A4BIIgotd0ca48aa
+Content-Type: application/json
+Accept: application/json
+
+{
+    "name": "melisa daza",
+    "email": "melisa@gmail.com",
+    "password": "melisa123",
+    "password_confirmation": "melisa123",
+    "categoria_id": 3,
+    "roles": [9],
+    "persona": {
+        "nombre_completo": "melisa daza roll",
+        "carnet_identidad": "5689756",
+        "fecha_nacimiento": "1990-08-23",
+        "genero": "F",
+        "telefono": "79563010",
+        "direccion": "B/paraiso",
+        "tipo_trabajador": "manual",
+        "nacionalidad": "Boliviana",
+        "tipo_salario": "TGN",
+        "numero_tipo_salario": "6868"
+    }
+}

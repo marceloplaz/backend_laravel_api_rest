@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class User extends Authenticatable
 {
@@ -31,43 +33,49 @@ class User extends Authenticatable
         ];
     }
 
-    // 🔷 Relación con Persona
-    public function persona()
+    // 🔷 Relación estructural con Roles (Muchos a Muchos)
+    public function roles(): BelongsToMany
     {
-        return $this->hasOne(Persona::class);
+        return $this->belongsToMany(Role::class, 'role_user')->withTimestamps();
     }
 
+    // 🔷 Relación con Persona (La tabla personas tiene el user_id)
+    public function persona(): HasOne
+    {
+        return $this->hasOne(Persona::class, 'user_id');
+    }
+
+   
     // 🔷 Relación con Categoria
+ 
     public function categoria()
     {
         return $this->belongsTo(Categoria::class);
     }
 
-    // 🔷 Relación con Roles (RBAC)
-   public function hasRole(string $role): bool
-{
-    return $this->roles->where('name', $role)->isNotEmpty();
-}
+    // 🔷 Verificación de Roles
+    public function hasRole(string $role): bool
+    {
+        return $this->roles->where('name', $role)->isNotEmpty();
+    }
 
-    // 🔷 Verificación de permiso
-   public function hasPermission(string $permission): bool
-{
-    // Esto carga los permisos una sola vez y luego busca en la colección en memoria
-    return $this->roles->flatMap->permissions->pluck('name')->contains($permission);
-}
+    // 🔷 Verificación de Permisos (Usando la columna 'action' de tu DB)
+    public function hasPermission(string $permission): bool
+    {
+        return $this->roles->flatMap->permissions->pluck('action')->contains($permission);
+    }
 
-
+    // 🔷 Relación con Servicios
     public function servicios()
-{
-    return $this->belongsToMany(Servicio::class, 'usuario_servicios');
-}
+    {
+        return $this->belongsToMany(Servicio::class, 'usuario_servicios');
+    }
 
-// 🔷 Relación con Turnos asignados (N:M)
-// Ejemplo en User.php
-public function turnos()
-{
-    return $this->belongsToMany(Turno::class, 'turnos_asignados')
-                ->withTimestamps()
-                ->withPivot('estado', 'fecha'); // Para acceder a estos campos fácilmente
-}
+    // 🔷 Relación con Turnos
+    public function turnos()
+    {
+        return $this->belongsToMany(Turno::class, 'turnos_asignados')
+                    ->withTimestamps()
+                    ->withPivot('estado', 'fecha');
+    }
 }

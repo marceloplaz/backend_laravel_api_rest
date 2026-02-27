@@ -69,7 +69,12 @@ Route::prefix("v1")->group(function(){
             // Asignar turnos a subordinados (Jefes de Servicio/Enfermería/Generales)
             Route::post('/', [TurnoAsignadoController::class, 'store'])
                 ->middleware('jugadordeunbit:asignar_turnos'); 
-
+            
+            Route::post('intercambiar', [TurnoAsignadoController::class, 'intercambiarTurno'])
+        ->middleware('jugadordeunbit:asignar_turnos');
+            
+            // Cambiamos 'reporteSemanal' por 'reporteHorasSemana' y añadimos el parámetro opcional {usuario_id?}
+Route::get('reporte-semanal/{semana_id}/{usuario_id?}', [TurnoAsignadoController::class, 'reporteHorasSemana']);
             // Ver calendario del equipo (Jefes)
             Route::get('/servicio/{servicioId}/equipo', [TurnoAsignadoController::class, 'verTurnosPorJerarquia'])
                 ->middleware('jugadordeunbit:ver_equipo');

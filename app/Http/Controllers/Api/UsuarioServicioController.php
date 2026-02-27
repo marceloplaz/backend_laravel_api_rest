@@ -11,69 +11,80 @@ use App\Http\Resources\UsuarioServicioCollection;
 class UsuarioServicioController extends Controller
 {
     public function index(Request $request)
-    {
-        $query = UsuarioServicio::with(['usuario', 'servicio']);
+{
+    $query = UsuarioServicio::with(['usuario', 'servicio']);
 
-        if ($request->has('usuario_id')) {
-            $query->where('usuario_id', $request->usuario_id);
-        }
-
-        if ($request->has('servicio_id')) {
-            $query->where('servicio_id', $request->servicio_id);
-        }
-
-        $usuarioServicios = $query->paginate(10);
-
-        return new UsuarioServicioCollection($usuarioServicios);
+    if ($request->has('usuario_id')) {
+        $query->where('usuario_id', $request->usuario_id);
     }
+
+    if ($request->has('servicio_id')) {
+        $query->where('servicio_id', $request->servicio_id);
+    }
+
+    $usuarioServicios = $query->paginate(10);
+
+    // En lugar de llamar a la Collection que falla, usamos el Resource 
+    // con el método estático 'collection' que ya trae Laravel por defecto.
+    return UsuarioServicioResource::collection($usuarioServicios);
+}
 
     public function store(Request $request)
     {
-        $request->validate([
-    'usuario_id' => 'required|exists:users,id', // 'users' en plural
-    'servicio_id' => 'required|exists:servicios,id', // 'servicios' en plural
-    'fecha_inicio' => 'required|date',
-    'fecha_fin' => 'nullable|date|after_or_equal:fecha_inicio', // Agregué una validación lógica
-    'estado' => 'nullable|string'
-]);
+        $validated = $request->validate([
+            'usuario_id'                   => 'required|exists:users,id',
+            'servicio_id'                  => 'required|exists:servicios,id',
+            'fecha_ingreso'                => 'required|date',
+            'descripcion_usuario_servicio' => 'nullable|string|max:500',
+            'estado'                       => 'boolean'
+        ]);
 
-        $usuarioServicio = UsuarioServicio::create($request->all());
+        // Evitar duplicados activos
+        $existe = UsuarioServicio::where('usuario_id', $validated['usuario_id'])
+            ->where('servicio_id', $validated['servicio_id'])
+            ->where('estado', true)
+            ->exists();
+
+        if ($existe) {
+            return response()->json(['message' => 'El usuario ya tiene una asignación activa en este servicio.'], 422);
+        }
+
+        $usuarioServicio = UsuarioServicio::create($validated);
+
+        // CARGAR RELACIONES ANTES DE ENVIAR AL RESOURCE
+        $usuarioServicio->load(['usuario', 'servicio']);
 
         return new UsuarioServicioResource($usuarioServicio);
     }
 
     public function show($id)
     {
-        $usuarioServicio = UsuarioServicio::with(['usuario', 'servicio'])->find($id);
-
-        if (!$usuarioServicio) {
-            return response()->json(['message' => 'Registro no encontrado'], 404);
-        }
-
+        // findOrFail es más limpio: lanza un 404 automáticamente si no existe
+        $usuarioServicio = UsuarioServicio::with(['usuario', 'servicio'])->findOrFail($id);
+        
         return new UsuarioServicioResource($usuarioServicio);
     }
 
     public function update(Request $request, $id)
     {
-        $usuarioServicio = UsuarioServicio::find($id);
+        $usuarioServicio = UsuarioServicio::findOrFail($id);
 
-        if (!$usuarioServicio) {
-            return response()->json(['message' => 'Registro no encontrado'], 404);
-        }
+        $validated = $request->validate([
+            'usuario_id'                   => 'sometimes|exists:users,id',
+            'servicio_id'                  => 'sometimes|exists:servicios,id',
+            'fecha_ingreso'                => 'sometimes|date',
+            'descripcion_usuario_servicio' => 'nullable|string|max:500',
+            'estado'                       => 'boolean'
+        ]);
 
-        $usuarioServicio->update($request->all());
+        $usuarioServicio->update($validated);
 
         return new UsuarioServicioResource($usuarioServicio);
     }
 
     public function destroy($id)
     {
-        $usuarioServicio = UsuarioServicio::find($id);
-
-        if (!$usuarioServicio) {
-            return response()->json(['message' => 'Registro no encontrado'], 404);
-        }
-
+        $usuarioServicio = UsuarioServicio::findOrFail($id);
         $usuarioServicio->delete();
 
         return response()->json(['message' => 'Registro eliminado'], 200);

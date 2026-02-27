@@ -1,0 +1,27 @@
+
+### Registro Maestro: Usuario + Persona + Rol
+POST http://localhost:8000/api/v1/usuarios
+Authorization: Bearer 13|1v9ffDibWG2GBqSzibhRIigdmhzGdUM6A4BIIgotd0ca48aa
+Content-Type: application/json
+Accept: application/json
+
+{
+    "name": "sergio vidaurre",
+    "email": "sergiovidaurre@gmail.com",
+    "password": "sergiovidaurre123",
+    "password_confirmation": "sergiovidaurre123",
+    "categoria_id": 1,
+    "roles": [7],
+    "persona": {
+        "nombre_completo": "sergio vidaurre",
+        "carnet_identidad": "5056892",
+        "fecha_nacimiento": "1990-05-23",
+        "genero": "M",
+        "telefono": "7867881",
+        "direccion": "B/paraiso",
+        "tipo_trabajador": "medico",
+        "nacionalidad": "Boliviana",
+        "tipo_salario": "TGN",
+        "numero_tipo_salario": "89956"
+    }
+}

@@ -1,0 +1,51 @@
+POST http://localhost:8000/api/v1/turno-asignado
+Authorization: Bearer TU_TOKEN
+Content-Type: application/json
+
+{
+    "servicio_id": 1,
+    "turno_id": 10, 
+    "fecha": "2026-02-26",
+    "observacion": "Turno asignado por sistema"
+}
+
+### 1. Registrar un turno (POST)
+POST http://localhost:8000/api/v1/turnos-asignados
+Authorization: Bearer 17|kF0HiyjUvRAWqtGOgowbV8LQA4arhAcN7jfm0d8Zf15ef44b
+Content-Type: application/json
+Accept: application/json
+
+{
+    "servicio_id": 1,
+    "turno_id": 10, 
+    "fecha": "2026-02-26",
+    "observacion": "Turno asignado por sistema"
+}
+### 1. Registrar un turno (POST)
+POST http://localhost:8000/api/v1/turnos-asignados
+Authorization: Bearer 18|mUvCUjB78YDW53oK3Jr1JpIK4k8wXaGGrY0m76ZS47aa60bc
+Content-Type: application/json
+
+{
+    "usuario_id": 3,
+    "turno_id": 20,
+    "fecha": "2026-02-25",
+
+    "observacion": "cargado de turno para enfermera"
+}
+
+### Ver reporte de horas de la semana 5
+### Obtener reporte de horas por semana
+GET http://localhost:8000/api/v1/turnos-asignados/reporte-semanal/5
+Authorization: Bearer 18|mUvCUjB78YDW53oK3Jr1JpIK4k8wXaGGrY0m76ZS47aa60bc
+Accept: application/json
+
+### intercambiar turnos
+POST http://localhost:8000/api/v1/turnos-asignados/intercambiar
+Authorization: Bearer 19|auWuAprNxRWGt4MRcMSCGFSQgZBy2QjiCu0LsH6Cab720e31
+Accept: application/json
+
+{
+    "asignacion_id_1": 10,
+    "asignacion_id_2": 15
+}

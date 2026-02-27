@@ -27,6 +27,10 @@ class TurnoController extends Controller
         return response()->json($turno, 201);
     }
 
+
+
+
+
     public function show($id)
     {
         $turno = Turno::with('servicios')->findOrFail($id);

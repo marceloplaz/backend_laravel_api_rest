@@ -2,29 +2,56 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class TurnoAsignado extends Model
 {
-    // Laravel por defecto busca "turno_asignados", 
-    // pero tu migración dice "turno_asignados" (fíjate en el plural/singular)
+    use HasFactory;
+
     protected $table = 'turnos_asignados'; 
 
     protected $fillable = [
-    'usuario_id', // O user_id según tu migración
-    'servicio_id',
-    'turno_id',
-    'semana_id',
-    'mes_id',
-    'gestion_id',
-    'fecha',
-    'estado',
-    'observacion'
-];
+        'usuario_id',
+        'servicio_id',
+        'turno_id',
+        'semana_id',
+        'mes_id',
+        'gestion_id',
+        'fecha',
+        'estado',
+        'observacion'
+    ];
 
-// No olvides las relaciones para que el 'with' del controlador funcione
-public function usuario() { return $this->belongsTo(User::class, 'usuario_id'); }
-public function servicio() { return $this->belongsTo(Servicio::class); }
-public function turno() { return $this->belongsTo(Turno::class); }
-public function semana() { return $this->belongsTo(Semana::class); }
+    // Relaciones para el Controlador
+    public function usuario() 
+    { 
+        return $this->belongsTo(User::class, 'usuario_id'); 
+    }
+
+    public function servicio() 
+    { 
+        return $this->belongsTo(Servicio::class, 'servicio_id'); 
+    }
+
+    public function turno() 
+    { 
+        return $this->belongsTo(Turno::class, 'turno_id'); 
+    }
+
+    public function semana() 
+    { 
+        return $this->belongsTo(Semana::class, 'semana_id'); 
+    }
+
+    // Estas son vitales para obtener mes_id y gestion_id automáticamente
+    public function mes() 
+    { 
+        return $this->belongsTo(Mes::class, 'mes_id'); 
+    }
+
+    public function gestion() 
+    { 
+        return $this->belongsTo(Gestion::class, 'gestion_id'); 
+    }
 }

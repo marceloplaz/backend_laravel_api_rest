@@ -8,118 +8,116 @@ Content-Type: application/json
     "password": "admin123",
     "password2": "admin123"
 }
-###   login
-POST http://localhost:8000/api/v1/auth/login
-Accept: application/json
-Content-Type: application/json
 
-{
-    "email": "medico@test.com",
-    "password": "password" 
-}
-
-### profile
-
-GET http://localhost:8000/api/v1/auth/profile
-Accept: application/json
-Authorization: Bearer 6|qJeMFOllikpAJhsqlNRTM9rwA3qwiI2OIAKetPdw3929ec03
-
-### LOGOUT
-POST http://localhost:8000/api/v1/auth/logout
-Accept: application/json
-Authorization: Bearer 3|6oy8G59eRJQFEhAH1HzE5dvDGEeP2oXU0HFdiUGm448831f2
-
-### persona
-POST http://localhost:8000/api/v1/persona
-Accept: application/json
-Authorization: Bearer 6|qJeMFOllikpAJhsqlNRTM9rwA3qwiI2OIAKetPdw3929ec03
-Content-Type: application/json
-
-{
-    "nombre_completo": "carmen rosa cari figueroa",
-    "carnet_identidad": "5011070",
-    "fecha_nacimiento": "1990-05-15",
-    "genero": "Femenino",
-    "telefono": "78708800",
-    "direccion": "B/Paraiso",
-    "tipo_trabajador": "medico",
-    "nacionalidad": "Boliviana",
-    "tipo_salario": "TGN",
-    "numero_tipo_salario": "5626"
-}
-
-### servicios
-POST http://localhost:8000/api/v1/servicios
-Accept: application/json
-Authorization: Bearer 7|bb6ziYksQDfnKZYG4peaaIHtkNMNT0s0sdYRzL3wc763b9cd
-Content-Type: application/json
-
-{
-    "nombre": "Emergencias" 
-}
-// servicios
-
-### servicios
-GET  http://localhost:8000/api/v1/servicios
-Accept: application/json
-Authorization: Bearer 7|bb6ziYksQDfnKZYG4peaaIHtkNMNT0s0sdYRzL3wc763b9cd
-
-// asignar turno
-### Variables
-POST http://localhost:8000/api/v1/turnos-asignados
-
-Authorization: Bearer {2|Vzqo9kPhWpi6LrrrgIDvAmfF0dpVpdETKT15Hyh8b4494a6f}
-Content-Type: application/json
-Accept: application/json
-
-{
-    "servicio_id": 5, 
-    "turno_id": 1,
-    "fecha": "2026-03-01",
-    "observacion": "Asignación de prueba para Dr. García"
-}
-### Paso 1: Login para obtener el Token
+### 1. login Iniciar Sesión como Super Admin
 POST http://localhost:8000/api/v1/auth/login
 Content-Type: application/json
+Accept: application/json
 
 {
-    "email": "medico@test.com",
-    "password": "password" 
+    "email": "jugadordeunbit@gmail.com",
+    "password": "jugadordeunbit5011070"
 }
-
-
-### Autorizar el Turno 1 (Médico) en el Servicio 1 (Hemodiálisis)
-POST http://localhost:8000/api/v1/servicios/1/turnos
-Authorization: Bearer 4|fcxYUwtjYOBubxIdkm4VHeXuvUWe3g38jwAPcKcXf9fbd476
+### Cambiar Contraseña Inicial
+PUT http://localhost:8000/api/v1/auth/change-password
+Authorization: Bearer 12|nQ4GJ7zm9hV6TLSTdopX15xnGAs9GmErBGtALReH5440a6de
 Content-Type: application/json
 Accept: application/json
 
 {
-    "turno_id": 1
+    "current_password": "admin123",
+    "password": "NuevaPassword2026",
+    "password_confirmation": "NuevaPassword2026"
 }
-### Copia el "access_token" de la respuesta y pégalo abajo
 
-### Paso 2: Probar el registro de un turno
-POST http://localhost:8000/api/v1/turnos-asignados
-Authorization: Bearer 4|fcxYUwtjYOBubxIdkm4VHeXuvUWe3g38jwAPcKcXf9fbd476
+### Actualizar Contraseña Inicial (Ruta correcta según tu api.php)
+POST http://localhost:8000/api/v1/auth/update-initial-password
+Authorization: Bearer 12|nQ4GJ7zm9hV6TLSTdopX15xnGAs9GmErBGtALReH5440a6de
 Content-Type: application/json
 Accept: application/json
 
 {
-    "servicio_id": 1,
-    "turno_id": 1,
-    "fecha": "2026-02-23",
-    "observacion": "Prueba de sistema"
-}   
+    "password": "jugadordeunbit5011070",
+    "password_confirmation": "jugadordeunbit5011070"
+}
 
-### Paso 2: Probar el registro de un turno
-POST http://localhost:8000/api/v1/turnos-asignados
-Authorization: Bearer 4|fcxYUwtjYOBubxIdkm4VHeXuvUWe3g38jwAPcKcXf9fbd476
+### Registro Maestro: Usuario + Persona + Rol
+POST http://localhost:8000/api/v1/usuarios
+Authorization: Bearer 12|nQ4GJ7zm9hV6TLSTdopX15xnGAs9GmErBGtALReH5440a6de
 Content-Type: application/json
 
 {
-    "servicio_id": 1,
-    "turno_id": 1,
-    "fecha": "2026-02-23",
-    "observacion": "Probando con el nombre de tabla corregido"
+    "name": "juanita_perez",
+    "email": "perez_v2@gmail.com",
+    "password": "perez123",
+    "password_confirmation": "perez123",
+    "categoria_id": 1,
+    "roles": [10],
+    "persona": {
+        "nombre_completo": "Juan Perez Segundo",
+        "carnet_identidad": "99887766",
+        "fecha_nacimiento": "1990-05-20",
+        "genero": "M",
+        "telefono": "72010020",
+        "direccion":"b/mendez",
+        "tipo_trabajador": "medico",
+        "nacionalidad": "Boliviana",
+        "tipo_salario": "TGN",
+        "numero_tipo_salario": "4455"
+    }
+}
+
+
+### Registro Maestro: Usuario + Persona + Rol
+POST http://localhost:8000/api/v1/usuarios
+Authorization: Bearer 13|1v9ffDibWG2GBqSzibhRIigdmhzGdUM6A4BIIgotd0ca48aa
+Content-Type: application/json
+Accept: application/json
+
+{
+    "name": "carmen rosa cari",
+    "email": "carmenrosacari@gmail.com",
+    "password": "carmenrosa123",
+    "password_confirmation": "carmenrosa123",
+    "categoria_id": 2,
+    "roles": [11],
+    "persona": {
+        "nombre_completo": "Carmen Rosa Cari Figueroa",
+        "carnet_identidad": "5011070",
+        "fecha_nacimiento": "1990-05-20",
+        "genero": "F",
+        "telefono": "78708800",
+        "direccion": "B/paraiso",
+        "tipo_trabajador": "enfermera",
+        "nacionalidad": "Boliviana",
+        "tipo_salario": "TGN",
+        "numero_tipo_salario": "5556"
+    }
+}
+
+### Registro Maestro: Usuario + Persona + Rol
+POST http://localhost:8000/api/v1/usuarios
+Authorization: Bearer 13|1v9ffDibWG2GBqSzibhRIigdmhzGdUM6A4BIIgotd0ca48aa
+Content-Type: application/json
+Accept: application/json
+
+{
+    "name": "norma arias huarachi",
+    "email": "normaariashuarachi@gmail.com",
+    "password": "norma123",
+    "password_confirmation": "norma123",
+    "categoria_id": 1,
+    "roles": [12],
+    "persona": {
+        "nombre_completo": "norma arias huarachi",
+        "carnet_identidad": "5056891",
+        "fecha_nacimiento": "1990-05-20",
+        "genero": "F",
+        "telefono": "78708881",
+        "direccion": "B/paraiso",
+        "tipo_trabajador": "administrativo",
+        "nacionalidad": "Boliviana",
+        "tipo_salario": "CONTRATO",
+        "numero_tipo_salario": "78956"
+    }
 }

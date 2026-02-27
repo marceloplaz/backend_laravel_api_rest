@@ -6,33 +6,30 @@ use Illuminate\Database\Eloquent\Model;
 
 class UsuarioServicio extends Model
 {
-    // Nombre de la tabla
-    protected $table = 'UsuarioServicio';
+    // 1. El nombre en la migración es 'usuario_servicios' (minúsculas y plural)
+    protected $table = 'usuario_servicios';
 
-    // Llave primaria (cambiar si no es 'id')
     protected $primaryKey = 'id';
-    public $incrementing = true; // poner false si no es autoincremental
-    protected $keyType = 'int';  // cambiar a 'string' si la PK es string
+    public $incrementing = true;
+    protected $keyType = 'int';
+    public $timestamps = true;
 
-    // Timestamps
-    public $timestamps = true; // poner false si no hay created_at y updated_at
-
-    // Campos asignables masivamente
+    // 2. Ajustamos los campos según tu migración real
     protected $fillable = [
         'usuario_id',
         'servicio_id',
-        'fecha_inicio',
-        'fecha_fin',
-        'estado'
+        'descripcion_usuario_servicio',
+        'estado',
+        'fecha_ingreso'
     ];
 
-    // Relación con el modelo Usuario
+    // 3. Relación con el modelo User (importante usar el nombre correcto de la clase)
     public function usuario()
     {
-        return $this->belongsTo(Usuario::class, 'usuario_id');
+        // Tu modelo se llama 'User', no 'Usuario'
+        return $this->belongsTo(User::class, 'usuario_id');
     }
 
-    // Relación con el modelo Servicio
     public function servicio()
     {
         return $this->belongsTo(Servicio::class, 'servicio_id');

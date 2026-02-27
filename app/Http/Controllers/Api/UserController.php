@@ -4,9 +4,11 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Models\Persona;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\DB; // Para transacciones
 class UserController extends Controller
 {
     /**
@@ -19,35 +21,67 @@ class UserController extends Controller
         return response()->json($users);
     }
 
+public function store(Request $request)
+    {
+        // 1. Validación estricta
+        $request->validate([
+            'name'                  => 'required|string|max:255',
+            'email'                 => 'required|email|unique:users,email',
+            'password'              => 'required|min:8|confirmed',
+            'categoria_id'          => 'nullable|exists:categorias,id',
+            'roles'                 => 'required|array',
+            'roles.*'               => 'exists:roles,id',
+            // Validación de los datos anidados de la persona
+            'persona'               => 'required|array',
+            'persona.nombre_completo' => 'required|string|max:255',
+            'persona.carnet_identidad' => 'required|string|unique:personas,carnet_identidad',
+            'persona.tipo_trabajador' => 'required|string',
+        ]);
+
+        try {
+            // Usamos una transacción para que si algo falla, no quede un usuario sin persona o viceversa
+            return DB::transaction(function () use ($request) {
+                
+                // 2. Crear el Usuario
+                $user = User::create([
+                    'name'         => $request->name,
+                    'email'        => $request->email,
+                    'password'     => Hash::make($request->password),
+                    'categoria_id' => $request->categoria_id,
+                ]);
+
+                // 3. Crear la Persona vinculada
+                // Laravel automáticamente inyectará el 'user_id' gracias a la relación hasOne
+                $user->persona()->create($request->persona);
+
+                // 4. Asignar Roles (Tabla Pivot role_user)
+                if ($request->has('roles')) {
+                    $user->roles()->sync($request->roles);
+                }
+
+                // 5. Cargar relaciones para la respuesta
+                $user->load(['persona', 'roles', 'categoria']);
+
+                return response()->json([
+                    'message' => 'Usuario, Persona y Roles registrados exitosamente.',
+                    'user'    => $user
+                ], 201);
+            });
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error en el proceso de registro maestro',
+                'error'   => $e->getMessage(),
+                'line'    => $e->getLine()
+            ], 500);
+        }
+    }
+
     /**
      * Crea un nuevo usuario.
      */
-public function store(Request $request)
-{
-    $validated = $request->validate([
-        'name' => 'required|string|max:255',
-        'email' => 'required|email|unique:users,email',
-        // 'confirmed' obliga a enviar un campo llamado 'password_confirmation'
-        'password' => 'required|min:8|confirmed', 
-        'categoria_id' => 'nullable|exists:categorias,id'
-    ]);
 
-   $user = User::create([
-    'name' => $validated['name'],
-    'email' => $validated['email'],
-    'password' => Hash::make($validated['password']),
-    'categoria_id' => $validated['categoria_id'] ?? null,
-    'must_change_password' => true, // El usuario DEBE cambiarla
-]);
-    // Opcional: Podrías asignar un rol por defecto aquí si lo necesitas
-    // $user->roles()->attach($id_del_rol_medico);
-
-    return response()->json([
-        'message' => 'Usuario creado con éxito',
-        'user' => $user->load('categoria') // Cargamos la categoría para que el frontend la vea
-    ], 201);
-}
-
+ 
     /**
      * Muestra un usuario específico con todo su historial de turnos.
      */
@@ -72,14 +106,20 @@ public function store(Request $request)
         $validated = $request->validate([
             'name' => 'sometimes|string|max:255',
             'email' => 'sometimes|email|unique:users,email,' . $id,
-            'categoria_id' => 'sometimes|exists:categorias,id'
+            'categoria_id' => 'sometimes|exists:categorias,id',
+            'roles' => 'sometimes|array'
         ]);
+
+        // Sincronizar roles si se envían
+        if ($request->has('roles')) {
+            $user->roles()->sync($request->roles);
+        }
 
         $user->update($validated);
 
         return response()->json([
-            'message' => 'Usuario actualizado',
-            'user' => $user
+            'message' => 'Usuario actualizado correctamente',
+            'user' => $user->load('roles')
         ]);
     }
 
