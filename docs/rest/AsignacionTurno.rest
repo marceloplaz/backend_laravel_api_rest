@@ -49,3 +49,14 @@ Accept: application/json
     "asignacion_id_1": 10,
     "asignacion_id_2": 15
 }
+
+### intercambiar turnos
+POST http://localhost:8000/api/v1/turnos-asignados/intercambiar
+Authorization: Bearer 19|auWuAprNxRWGt4MRcMSCGFSQgZBy2QjiCu0LsH6Cab720e31
+Content-Type: application/json
+Accept: application/json
+
+{
+    "asignacion_id_1": 2,
+    "asignacion_id_2": 8
+}

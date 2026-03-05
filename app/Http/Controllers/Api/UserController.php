@@ -14,12 +14,12 @@ class UserController extends Controller
     /**
      * Muestra una lista de usuarios con sus turnos y categorías.
      */
-    public function index()
-    {
-        // Cargamos las relaciones 'categoria' y 'turnos' para evitar el problema N+1
-        $users = User::with(['categoria', 'turnos', 'persona'])->get();
-        return response()->json($users);
-    }
+   public function index()
+{
+    // Quitamos 'turnos' por un momento para que la API no explote
+    $users = User::with(['categoria', 'persona'])->get();
+    return response()->json($users);
+}
 
 public function store(Request $request)
     {

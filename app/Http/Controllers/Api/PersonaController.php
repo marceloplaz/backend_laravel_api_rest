@@ -1,6 +1,6 @@
 <?php
 namespace App\Http\Controllers\Api;
-
+use App\Http\Controllers\Controller;
 use App\Models\Persona;
 use App\Http\Resources\PersonaResource;
 use Illuminate\Http\Request;

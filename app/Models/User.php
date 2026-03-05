@@ -74,8 +74,8 @@ class User extends Authenticatable
     // 🔷 Relación con Turnos
     public function turnos()
     {
-        return $this->belongsToMany(Turno::class, 'turnos_asignados')
-                    ->withTimestamps()
-                    ->withPivot('estado', 'fecha');
+       return $this->belongsToMany(Turno::class, 'turnos_asignados', 'usuario_id', 'turno_id')
+                ->withPivot('fecha', 'estado')
+                ->withTimestamps();
     }
 }
