@@ -100,28 +100,51 @@ public function store(Request $request)
      * Actualiza los datos del usuario.
      */
     public function update(Request $request, string $id)
-    {
-        $user = User::findOrFail($id);
+{
+    $user = User::findOrFail($id);
 
-        $validated = $request->validate([
-            'name' => 'sometimes|string|max:255',
-            'email' => 'sometimes|email|unique:users,email,' . $id,
-            'categoria_id' => 'sometimes|exists:categorias,id',
-            'roles' => 'sometimes|array'
-        ]);
+    // 1. Validación dinámica de la contraseña
+    $rules = [
+        'name' => 'sometimes|string|max:255',
+        'email' => 'sometimes|email|unique:users,email,' . $id,
+        'categoria_id' => 'sometimes|exists:categorias,id',
+        'roles' => 'sometimes|array',
+        'persona' => 'sometimes|array',
+        'persona.carnet_identidad' => 'sometimes|unique:personas,carnet_identidad,' . ($user->persona->id ?? 0),
+    ];
 
-        // Sincronizar roles si se envían
-        if ($request->has('roles')) {
-            $user->roles()->sync($request->roles);
-        }
-
-        $user->update($validated);
-
-        return response()->json([
-            'message' => 'Usuario actualizado correctamente',
-            'user' => $user->load('roles')
-        ]);
+    // Si el usuario envió una contraseña, validamos que tenga mínimo 8 caracteres
+    if ($request->filled('password')) {
+        $rules['password'] = 'required|min:8|confirmed'; // Requiere password_confirmation
     }
+
+    $validated = $request->validate($rules);
+
+    // 2. Actualizar datos básicos
+    $user->fill($request->only(['name', 'email', 'categoria_id']));
+
+    // 3. Lógica para la Contraseña: Solo si se proporcionó una nueva
+    if ($request->filled('password')) {
+        $user->password = Hash::make($request->password);
+    }
+
+    $user->save();
+
+    // 4. Actualizar relación Persona (CI, Teléfono, etc.)
+    if ($request->has('persona')) {
+        $user->persona()->update($request->input('persona'));
+    }
+
+    // 5. Sincronizar roles
+    if ($request->has('roles')) {
+        $user->roles()->sync($request->roles);
+    }
+
+    return response()->json([
+        'message' => 'Usuario y contraseña actualizados correctamente',
+        'user' => $user->load(['persona', 'roles'])
+    ]);
+}
 
 public function updatePassword(Request $request, $id)
     {
