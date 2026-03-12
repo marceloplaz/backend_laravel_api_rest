@@ -30,7 +30,7 @@ Route::prefix("v1")->group(function(){
         // --- 🏗️ ADMINISTRACIÓN DE SISTEMA (Solo Super Admin / Admin) ---
         // Usamos el alias 'jugadordeunbit' con el permiso 'admin_system'
         Route::middleware('jugadordeunbit:admin_system')->group(function() {
-           Route::get('/persona', [PersonaController::class, 'index']);
+           Route::apiResource('persona', PersonaController::class);
             Route::apiResource('usuarios', UserController::class);
             Route::apiResource('categorias', CategoriaController::class);
             Route::apiResource('servicios', ServicioController::class);

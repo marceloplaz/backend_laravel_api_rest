@@ -34,25 +34,43 @@ public function index(Request $request)
     // 5. Retornamos la colección paginada a través del Resource
     return PersonaResource::collection($personas);
 }
+public function store(Request $request)
+{
+    // 1. Validamos tanto los datos de la Persona como los del Usuario
+    $request->validate([
+        "nombre_completo"  => "required|string",
+        "carnet_identidad" => "required|unique:personas,carnet_identidad",
+        "tipo_trabajador"  => "required",
+        "tipo_salario"     => "required",
+        "direccion"        => "required", // Evita el error de 'cannot be null'
+        "email"            => "required|email|unique:users,email", // Para el Usuario
+        "password"         => "required|min:6",                  // Para el Usuario
+    ]);
 
-    public function store(Request $request)
-    {
-        $request->validate([
-            "nombre_completo" => "required|string",
-            "carnet_identidad" => "required|unique:personas",
-            "tipo_trabajador" => "required",
-            "tipo_salario" => "required"
-        ]);
+    // --- BLOQUE NUEVO: CREACIÓN DE USUARIO ---
+    // Creamos el registro en la tabla 'users' primero
+    $usuario = \App\Models\User::create([
+        "name"         => $request->nombre_completo,
+        "email"        => $request->email,
+        "password"     => \Illuminate\Support\Facades\Hash::make($request->password),
+        "categoria_id" => $request->categoria_id ?? 1, // Ajusta según tu lógica
+    ]);
+    // -----------------------------------------
 
-        $persona = new Persona($request->all());
-        $persona->user_id = $request->user()->id; 
-        $persona->save();
+    // Tu código original sigue aquí
+    $persona = new Persona($request->all());
 
-        return response()->json([
-            "message" => "Datos personales guardados correctamente",
-            "persona" => new PersonaResource($persona)
-        ], 201);
-    }
+    // Modificamos esta parte para que el user_id sea el del usuario que acabamos de crear
+    $persona->user_id = $usuario->id; 
+
+    $persona->save();
+
+    return response()->json([
+        "message" => "Usuario y Datos personales guardados correctamente",
+        "persona" => new PersonaResource($persona),
+        "usuario" => $usuario // Opcional: devolver el usuario creado
+    ], 201);
+}
     // 1. VER (Read) - Ver los datos de la persona vinculada al usuario logueado
 public function show(Request $request)
 {
