@@ -1,122 +1,142 @@
 <?php
 namespace App\Http\Controllers\Api;
+
 use App\Http\Controllers\Controller;
 use App\Models\Persona;
+use App\Models\User;
 use App\Http\Resources\PersonaResource;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\DB;
 
-// ESTA ES LA CLASE QUE FALTA:
 class PersonaController extends Controller 
 {
-    // Ahora sí, la función dentro de la clase
+    public function index(Request $request)
+    {
+        $query = Persona::with('user'); 
 
-public function index(Request $request)
-{
-    // 1. Iniciamos la consulta
-    $query = Persona::query();
+        if ($request->has('buscar')) {
+            $buscar = $request->get('buscar');
+            $query->where('nombre_completo', 'like', "%$buscar%")
+                  ->orWhere('carnet_identidad', 'like', "%$buscar%");
+        }
 
-    // 2. Filtro por búsqueda (nombre o CI)
-    if ($request->has('buscar')) {
-        $buscar = $request->get('buscar');
-        $query->where('nombre_completo', 'like', "%$buscar%")
-              ->orWhere('carnet_identidad', 'like', "%$buscar%");
+        if ($request->has('cargo')) {
+            $query->where('tipo_trabajador', $request->get('cargo'));
+        }
+
+        return PersonaResource::collection($query->paginate(10));
     }
 
-    // 3. Filtro por cargo (opcional)
-    if ($request->has('cargo')) {
-        $query->where('tipo_trabajador', $request->get('cargo'));
+    public function store(Request $request)
+    {
+        // 1. VALIDACIÓN COMPLETA
+        // Aseguramos que 'persona' sea un array para evitar errores al acceder a sus hijos
+        $request->validate([
+            "name"              => "required|string",
+            "email"             => "required|email|unique:users,email",
+            "password"          => "required|min:6",
+            "categoria_id"      => "required|integer", 
+            "roles"             => "required|array",
+            
+            "persona"                     => "required|array",
+            "persona.nombre_completo"     => "required|string",
+            "persona.carnet_identidad"    => "required|unique:personas,carnet_identidad",
+            "persona.fecha_nacimiento"    => "required|date",
+            "persona.genero"              => "required|string|max:1",
+            "persona.telefono"            => "required|string", // ¡CRÍTICO!
+            "persona.direccion"           => "required|string",
+            "persona.nacionalidad"        => "required|string",
+            "persona.tipo_trabajador"     => "required|string", 
+            "persona.tipo_salario"        => "required|string",
+            "persona.numero_tipo_salario" => "required|numeric",
+        ]);
+
+        try {
+            return DB::transaction(function () use ($request) {
+                
+                // 2. CREACIÓN DE USUARIO
+                $usuario = User::create([
+                    "name"         => $request->name,
+                    "email"        => $request->email,
+                    "password"     => Hash::make($request->password),
+                    "categoria_id" => $request->categoria_id, 
+                ]);
+
+                // Asignar Roles (Sync para evitar duplicados en tabla pivot)
+                if ($request->has('roles')) {
+                    $usuario->roles()->sync($request->roles);
+                }
+
+                // 3. CREACIÓN DE DATOS PERSONALES
+                $datosPersona = $request->persona;
+                $datosPersona['user_id'] = $usuario->id; 
+
+                $persona = Persona::create($datosPersona);
+
+                return response()->json([
+                    "message" => "Personal registrado con éxito",
+                    "persona" => new PersonaResource($persona)
+                ], 201);
+            });
+
+        } catch (\Exception $e) {
+            return response()->json([
+                "message" => "Error en el proceso de registro maestro",
+                "error" => $e->getMessage()
+            ], 500); 
+        }
     }
 
-    // 4. Paginación (10 registros por página)
-    // El método paginate lee automáticamente el parámetro ?page de la URL
-    $personas = $query->paginate(10);
-
-    // 5. Retornamos la colección paginada a través del Resource
-    return PersonaResource::collection($personas);
-}
-public function store(Request $request)
-{
-    // 1. Validamos tanto los datos de la Persona como los del Usuario
-    $request->validate([
-        "nombre_completo"  => "required|string",
-        "carnet_identidad" => "required|unique:personas,carnet_identidad",
-        "tipo_trabajador"  => "required",
-        "tipo_salario"     => "required",
-        "direccion"        => "required", // Evita el error de 'cannot be null'
-        "email"            => "required|email|unique:users,email", // Para el Usuario
-        "password"         => "required|min:6",                  // Para el Usuario
-    ]);
-
-    // --- BLOQUE NUEVO: CREACIÓN DE USUARIO ---
-    // Creamos el registro en la tabla 'users' primero
-    $usuario = \App\Models\User::create([
-        "name"         => $request->nombre_completo,
-        "email"        => $request->email,
-        "password"     => \Illuminate\Support\Facades\Hash::make($request->password),
-        "categoria_id" => $request->categoria_id ?? 1, // Ajusta según tu lógica
-    ]);
-    // -----------------------------------------
-
-    // Tu código original sigue aquí
-    $persona = new Persona($request->all());
-
-    // Modificamos esta parte para que el user_id sea el del usuario que acabamos de crear
-    $persona->user_id = $usuario->id; 
-
-    $persona->save();
-
-    return response()->json([
-        "message" => "Usuario y Datos personales guardados correctamente",
-        "persona" => new PersonaResource($persona),
-        "usuario" => $usuario // Opcional: devolver el usuario creado
-    ], 201);
-}
-    // 1. VER (Read) - Ver los datos de la persona vinculada al usuario logueado
-public function show(Request $request)
-{
-    $persona = $request->user()->persona;
-
-    if (!$persona) {
-        return response()->json(["message" => "No tienes datos registrados"], 404);
+    public function show(Request $request)
+    {
+        // Cargamos la relación 'user' para que el Resource tenga toda la info
+        $persona = $request->user()->load('persona')->persona;
+        
+        if (!$persona) {
+            return response()->json(["message" => "No tienes datos registrados"], 404);
+        }
+        return new PersonaResource($persona);
     }
 
-    return new PersonaResource($persona);
-}
+    public function update(Request $request, $id)
+    {
+        $persona = Persona::find($id);
 
-// 2. EDITAR (Update) - Actualizar la información
-public function update(Request $request)
-{
-    $persona = $request->user()->persona;
+        if (!$persona) {
+            return response()->json(["message" => "Persona no encontrada"], 404);
+        }
 
-    if (!$persona) {
-        return response()->json(["message" => "No tienes datos para actualizar"], 404);
+        // Si el request trae datos anidados de persona, los extraemos
+        $datos = $request->has('persona') ? $request->get('persona') : $request->all();
+        $persona->update($datos);
+
+        return response()->json([
+            "message" => "Datos actualizados correctamente",
+            "persona" => new PersonaResource($persona->fresh())
+        ]);
     }
 
-    $request->validate([
-        "nombre_completo" => "string",
-        "carnet_identidad" => "unique:personas,carnet_identidad," . $persona->id, // Ignora el CI actual del usuario
-        "telefono" => "string"
-    ]);
+    public function destroy($id)
+    {
+        $persona = Persona::with('user')->find($id);
+        
+        if (!$persona) {
+            return response()->json(["message" => "No hay datos que eliminar"], 404);
+        }
 
-    $persona->update($request->all());
+        try {
+            DB::transaction(function () use ($persona) {
+                $user = $persona->user;
+                $persona->delete();
+                if ($user) {
+                    $user->delete(); // Eliminamos también el acceso al sistema
+                }
+            });
 
-    return response()->json([
-        "message" => "Datos actualizados correctamente",
-        "persona" => new PersonaResource($persona)
-    ]);
-}
-
-// 3. ELIMINAR (Delete) - Borrar los datos personales
-public function destroy(Request $request)
-{
-    $persona = $request->user()->persona;
-
-    if (!$persona) {
-        return response()->json(["message" => "No hay datos que eliminar"], 404);
+            return response()->json(["message" => "Personal y usuario eliminados correctamente"]);
+        } catch (\Exception $e) {
+            return response()->json(["message" => "Error al eliminar", "error" => $e->getMessage()], 500);
+        }
     }
-
-    $persona->delete();
-
-    return response()->json(["message" => "Datos eliminados correctamente"]);
-}
 }

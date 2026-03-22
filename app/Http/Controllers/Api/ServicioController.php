@@ -39,11 +39,11 @@ class ServicioController extends Controller
     }
 
     // ACTUALIZAR
-    public function update(ServicioUpdateRequest $request, $id)
+    public function update(ServicioUpdateRequest $Request, $id)
     {
         $servicio = Servicio::findOrFail($id);
 
-        $servicio->update($request->validated());
+        $servicio->update($Request->all());
 
         return response()->json([
             'message' => 'Servicio actualizado correctamente',

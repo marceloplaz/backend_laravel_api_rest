@@ -11,7 +11,11 @@ class Servicio extends Model
     protected $fillable = [
         'nombre'
     ];
-
+// En app/Models/Servicio.php
+public function usuarios()
+{
+    return $this->belongsToMany(User::class, 'usuario_servicios', 'servicio_id', 'usuario_id');
+}
     public function turnos()
     {
         return $this->belongsToMany(

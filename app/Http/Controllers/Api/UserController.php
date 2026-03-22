@@ -212,5 +212,19 @@ public function updatePassword(Request $request, $id)
 
     return response()->json(['message' => 'Usuario eliminado con autorización confirmada.']);
 }
+/**
+ * Obtiene la lista de roles activos para los selectores del frontend.
+ */
+public function getRoles()
+{
+    // Importa el modelo: use App\Models\Role; al inicio del archivo
+    // Consultamos la tabla 'roles' que vimos en tu Laragon
+    $roles = \DB::table('roles')->where('estado', 1)->get(); 
+    
+    return response()->json([
+        'success' => true,
+        'data'    => $roles
+    ]);
+}
     
 }

@@ -68,7 +68,7 @@ class User extends Authenticatable
     // 🔷 Relación con Servicios
     public function servicios()
     {
-        return $this->belongsToMany(Servicio::class, 'usuario_servicios');
+        return $this->belongsToMany(Servicio::class, 'usuario_servicios', 'usuario_id', 'servicio_id');
     }
 
     // 🔷 Relación con Turnos

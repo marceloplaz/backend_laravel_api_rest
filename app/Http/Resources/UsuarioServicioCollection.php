@@ -13,7 +13,11 @@ class UsuarioServicioResource extends JsonResource
             'id' => $this->id,
             'usuario_id' => $this->usuario_id,
             // Si la relación existe, trae el nombre, si no, pone "No asignado"
-            'usuario_nombre' => $this->usuario ? $this->usuario->name : 'Usuario no encontrado',
+            // app/Http/Resources/UsuarioServicioResource.php
+
+'usuario_nombre' => $this->usuario && $this->usuario->persona 
+                    ? $this->usuario->persona->nombre_completo 
+                    : ($this->usuario->name ?? 'Sin nombre'),
             
             'servicio_id' => $this->servicio_id,
             'servicio_nombre' => $this->servicio ? $this->servicio->nombre : 'Servicio no encontrado',

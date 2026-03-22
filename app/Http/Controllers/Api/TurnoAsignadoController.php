@@ -105,7 +105,40 @@ class TurnoAsignadoController extends Controller
         'data' => $asignacion
     ], 201);
 }
-    public function verTurnosPorJerarquia(Request $request, $servicioId)
+// En Laravel: TurnoAsignadoController.php o similar
+
+public function getEquipoPorJerarquia($servicio_id)
+{
+    // 1. Buscamos los usuarios vinculados a este servicio
+    // Usamos 'whereHas' para filtrar por la tabla intermedia usuario_servicios
+    $equipo = \App\Models\User::whereHas('servicios', function($query) use ($servicio_id) {
+        $query->where('servicios.id', $servicio_id)
+              ->where('usuario_servicios.estado', true); // Solo activos
+    })
+    ->with(['categoria', 'persona']) // Cargamos la categoría
+    ->get();
+
+    // 2. Agrupamos los resultados por el nombre de la categoría para el frontend
+    $agrupado = $equipo->groupBy(function($user) {
+        return $user->categoria ? $user->categoria->nombre_categoria : 'Sin Categoría';
+    })->map(function($personal, $categoriaNombre) {
+        return [
+            'categoria' => $categoriaNombre,
+            'personal' => $personal->map(function($p) {
+                return [
+                    'id' => $p->id,
+                    'nombre' => $p->persona ? $p->persona->nombre_completo : $p->name,
+                ];
+            })
+        ];
+    })->values();
+
+    // 3. Retornamos la estructura que Angular espera
+    return response()->json([
+        'equipo_visible' => $agrupado
+    ]);
+}    
+public function verTurnosPorJerarquia(Request $request, $servicioId)
     {
         $user = auth()->user();
         $nivelUsuario = $user->categoria->nivel; 
@@ -263,4 +296,70 @@ public function reporteHorasSemana(Request $request, $semana_id, $usuario_id = n
         'data' => $reporte
     ]);
 }
+/**
+ * 5. OBTENER EQUIPO FILTRADO (Para el frontend de Angular)
+ * Filtra el personal de un servicio y opcionalmente por su categoría.
+ */
+public function getEquipoFiltrado(Request $request)
+{
+    try {
+        // Obtenemos los IDs desde la URL (?servicio_id=X&categoria_id=Y)
+        $servicio_id = $request->query('servicio_id');
+        $categoria_id = $request->query('categoria_id');
+
+        // 1. Empezamos la consulta con el modelo User
+        // Filtramos por la relación 'servicios' (debe estar definida en tu modelo User)
+        $query = \App\Models\User::whereHas('servicios', function($q) use ($servicio_id) {
+            $q->where('servicios.id', $servicio_id);
+        });
+
+        // 2. Filtramos por categoría si no se seleccionó "Todas"
+        // En tu HeidiSQL vimos que la columna se llama 'categoria_id'
+        if ($categoria_id && $categoria_id !== 'Todas' && $categoria_id !== 'null') {
+            $query->where('categoria_id', $categoria_id);
+        }
+
+        // 3. Obtenemos los datos con sus relaciones para evitar errores
+        $equipo = $query->with(['persona', 'categoria'])->get();
+
+        // 4. Mapeamos el resultado para que coincida con lo que espera tu Angular
+        $resultado = $equipo->map(function($user) {
+            return [
+                'usuario_id'     => $user->id,
+                'usuario_nombre' => $user->persona ? $user->persona->nombre_completo : $user->name,
+                'categoria_nombre' => $user->categoria ? $user->categoria->nombre : 'Sin categoría',
+                'turnos'         => [] // Esto evitará errores en el *ngFor de tu HTML
+            ];
+        });
+
+        return response()->json([
+            'status' => 'success',
+            'equipo_visible' => $resultado
+        ], 200);
+
+    } catch (\Exception $e) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Error en el servidor: ' . $e->getMessage()
+        ], 500);
+    }
+}
+// Agrega esto al final de tu TurnoAsignadoController
+public function listaCategorias()
+{
+    try {
+        // Usamos 'nombre' porque es como se llama en tu HeidiSQL
+        $categorias = \App\Models\Categoria::select('id', 'nombre')->get();
+        return response()->json([
+            'status' => 'success',
+            'data' => $categorias
+        ], 200);
+    } catch (\Exception $e) {
+        return response()->json([
+            'status' => 'error',
+            'message' => $e->getMessage()
+        ], 500);
+    }
+}
+
 }

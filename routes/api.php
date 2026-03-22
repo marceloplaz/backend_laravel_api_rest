@@ -16,10 +16,16 @@ use App\Http\Controllers\Api\IncidenciaController;
 
 Route::prefix("v1")->group(function(){
 
-    // 🔓 RUTAS PÚBLICAS
+    // 🔓 RUTAS PÚBLICAS (Sin token)
     Route::post("/auth/register", [AuthController::class, "funRegister"]);
     Route::post("/auth/login", [AuthController::class, "funLogin"]);
+    Route::get("/roles", [UserController::class, "getRoles"]); 
+    Route::get("/categorias", [UserController::class, "index"]); 
     
+    // Estas rutas permiten cargar el equipo y las categorías sin problemas de sesión
+    Route::get("/categorias-lista", [TurnoAsignadoController::class, "listaCategorias"]);
+    Route::get("/equipo-filtrado", [TurnoAsignadoController::class, "getEquipoFiltrado"]);
+
     // 🔒 RUTAS PROTEGIDAS POR TOKEN (SANCTUM)
     Route::middleware('auth:sanctum')->group(function(){
         
@@ -27,65 +33,68 @@ Route::prefix("v1")->group(function(){
         Route::get("/auth/profile", [AuthController::class, "funprofile"]);
         Route::post("/auth/logout", [AuthController::class, "funlogout"]);
 
-        // --- 🏗️ ADMINISTRACIÓN DE SISTEMA (Solo Super Admin / Admin) ---
-        // Usamos el alias 'jugadordeunbit' con el permiso 'admin_system'
+        // --- 🏗️ ADMINISTRACIÓN DE SISTEMA ---
         Route::middleware('jugadordeunbit:admin_system')->group(function() {
-           Route::apiResource('persona', PersonaController::class);
+            Route::apiResource('persona', PersonaController::class);
             Route::apiResource('usuarios', UserController::class);
             Route::apiResource('categorias', CategoriaController::class);
             Route::apiResource('servicios', ServicioController::class);
             Route::apiResource('turnos', TurnoController::class);
             Route::apiResource('usuario-servicio', UsuarioServicioController::class);
+            
             Route::put('/usuarios/{id}/password', [UserController::class, 'updatePassword'])
-            ->middleware('jugadordeunbit:gestionar_seguridad');
+                ->middleware('jugadordeunbit:gestionar_seguridad');
+            
             Route::post('/auth/generate-action-token', [AuthController::class, 'generateToken'])
-            ->middleware('jugadordeunbit:gestionar_seguridad');
+                ->middleware('jugadordeunbit:gestionar_seguridad');
+            
             Route::post("/auth/update-initial-password", [AuthController::class, "updateFirstPassword"]);
         });
 
-        // --- 📝 GESTIÓN DE INCIDENCIAS (Estilo Google Keep) ---
-        // Ver notas: Cualquier usuario autenticado puede verlas
+        // --- 📝 GESTIÓN DE INCIDENCIAS ---
         Route::get('incidencias', [IncidenciaController::class, 'index']);
-        
-        // Crear nota de falla: Solo personal con permiso de reporte
         Route::post('incidencias', [IncidenciaController::class, 'store'])
             ->middleware('jugadordeunbit:reportar_incidencia');
-            
-        // Marcar como resuelto: Solo el Responsable Técnico
         Route::put('incidencias/{id}/resolver', [IncidenciaController::class, 'resolver'])
             ->middleware('jugadordeunbit:resolver_incidencia');
 
-        
-        // --- 📅 CONFIGURACIÓN DE TURNOS EN SERVICIOS (Jefes de Área) ---
+        // --- 📅 CONFIGURACIÓN DE CALENDARIO ---
+        Route::get('/calendario/configuracion', function() {
+            return [
+                'gestiones' => \App\Models\Gestion::with('meses.semanas')->get(),
+                'mes_actual' => date('n'),
+                'anio_actual' => date('Y')
+            ];
+        });
+            
+        // --- 📅 CONFIGURACIÓN DE TURNOS EN SERVICIOS ---
         Route::prefix('servicios/{servicioId}/turnos')->middleware('jugadordeunbit:gestionar_servicios')->group(function () {
             Route::post('/', [ServicioTurnoController::class, 'asignar']);
             Route::put('/sync', [ServicioTurnoController::class, 'sync']);
             Route::delete('/{turnoId}', [ServicioTurnoController::class, 'quitar']);
         });
 
-        // --- 👥 LÓGICA DE ASIGNACIÓN A PERSONAL (Jerarquías) ---
+        // --- 👥 LÓGICA DE ASIGNACIÓN A PERSONAL ---
         Route::prefix('turnos-asignados')->group(function () {
             
-            // Asignar turnos a subordinados (Jefes de Servicio/Enfermería/Generales)
+            // ❌ HEMOS QUITADO 'equipo-filtrado' y 'categorias-lista' de aquí 
+            // para que no choquen con las versiones públicas de arriba.
+
             Route::post('/', [TurnoAsignadoController::class, 'store'])
                 ->middleware('jugadordeunbit:asignar_turnos'); 
             
             Route::post('intercambiar', [TurnoAsignadoController::class, 'intercambiarTurno'])
-        ->middleware('jugadordeunbit:asignar_turnos');
+                ->middleware('jugadordeunbit:asignar_turnos');
             
-            // Cambiamos 'reporteSemanal' por 'reporteHorasSemana' y añadimos el parámetro opcional {usuario_id?}
-Route::get('reporte-semanal/{semana_id}/{usuario_id?}', [TurnoAsignadoController::class, 'reporteHorasSemana']);
-            // Ver calendario del equipo (Jefes)
+            Route::get('reporte-semanal/{semana_id}/{usuario_id?}', [TurnoAsignadoController::class, 'reporteHorasSemana']);
+            
             Route::get('/servicio/{servicioId}/equipo', [TurnoAsignadoController::class, 'verTurnosPorJerarquia'])
                 ->middleware('jugadordeunbit:ver_equipo');
 
-            // Descarga de reportes (Admin / Jefes)
             Route::get('/reporte/{mes_id}', [TurnoAsignadoController::class, 'reporteMensual'])
                 ->middleware('jugadordeunbit:ver_reportes');
 
-            // 🏥 Uso común: Cualquier empleado logueado ve su propio calendario
             Route::get('/mis-turnos', [TurnoAsignadoController::class, 'misTurnos']); 
         });
-   
     });
 });
