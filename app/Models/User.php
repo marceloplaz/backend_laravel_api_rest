@@ -78,4 +78,7 @@ class User extends Authenticatable
                 ->withPivot('fecha', 'estado')
                 ->withTimestamps();
     }
+    public function turnosAsignados() {
+    return $this->hasMany(TurnoAsignado::class, 'usuario_id');
+}
 }

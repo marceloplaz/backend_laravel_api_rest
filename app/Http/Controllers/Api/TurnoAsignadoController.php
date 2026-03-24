@@ -16,13 +16,12 @@ class TurnoAsignadoController extends Controller
      * 1. REGISTRAR TURNO
      * Validamos que el usuario solo use turnos de SU categoría y en servicios permitidos.
      */
-    public function store(Request $request)
+public function store(Request $request)
 {
-    // El usuario que está operando (ej. un Jefe)
     $userAutenticado = auth()->user();
 
     $request->validate([
-        'usuario_id'  => 'required|exists:users,id', // Personal al que se le asigna el turno
+        'usuario_id'  => 'required|exists:users,id',
         'turno_id'    => 'required|exists:turnos,id',
         'fecha'       => 'required|date',
         'observacion' => 'nullable|string|max:500'
@@ -31,64 +30,47 @@ class TurnoAsignadoController extends Controller
     $fechaFormateada = Carbon::parse($request->fecha)->format('Y-m-d');
 
     // 1. OBTENER EL SERVICIO AUTOMÁTICAMENTE
-    // Buscamos en qué servicio está activo el usuario destino
     $asignacionServicio = \App\Models\UsuarioServicio::where('usuario_id', $request->usuario_id)
         ->where('estado', true)
         ->first();
 
     if (!$asignacionServicio) {
         return response()->json([
-            'message' => 'El usuario no tiene un servicio activo asignado. Asígnalo a un servicio primero.'
+            'message' => 'El usuario no tiene un servicio activo asignado.'
         ], 422);
     }
 
     $servicioId = $asignacionServicio->servicio_id;
 
-    // 2. VALIDACIÓN DE CATEGORÍA Y TURNO
-    $usuarioDestino = \App\Models\User::with('categoria')->findOrFail($request->usuario_id);
+    // --- ❌ BLOQUE ELIMINADO PARA FLEXIBILIZAR ---
+    /* $usuarioDestino = \App\Models\User::with('categoria')->findOrFail($request->usuario_id);
     $turnoNuevo = Turno::findOrFail($request->turno_id);
 
-    // Verificamos que el turno corresponda a la categoría del usuario destino
     if ($turnoNuevo->categoria_id !== $usuarioDestino->categoria_id) {
         return response()->json([
-            'message' => "Acceso denegado: La categoría de {$usuarioDestino->name} no coincide con este turno."
+            'message' => "Acceso denegado..."
         ], 403);
     }
+    */
+    // --------------------------------------------
 
-    // 3. LÓGICA DE CALENDARIO (Semanas/Mes/Gestión)
+    // 2. LÓGICA DE CALENDARIO (Mantenla para que se guarden bien los IDs de semana/mes)
     $semana = Semana::where('fecha_inicio', '<=', $fechaFormateada)
         ->where('fecha_fin', '>=', $fechaFormateada)
         ->with('mes.gestion')
         ->first();
 
     if (!$semana) {
-        return response()->json(['message' => 'La fecha no existe en el calendario configurado.'], 422);
+        return response()->json(['message' => 'La fecha no existe en el calendario.'], 422);
     }
 
-    // 4. VALIDACIÓN DE CHOQUE DE HORARIOS (Evitar solapamientos)
-    $turnosDelDia = TurnoAsignado::where('usuario_id', $usuarioDestino->id)
-        ->where('fecha', $fechaFormateada)
-        ->with('turno')
-        ->get();
+    // 3. VALIDACIÓN DE CHOQUE (Opcional: déjala si no quieres que una persona tenga 2 turnos a la misma hora)
+    // ... (código de choque de horarios) ...
 
-    foreach ($turnosDelDia as $asignacionExistente) {
-        $existente = $asignacionExistente->turno;
-
-        // Lógica de choque: (InicioA < FinB) Y (FinA > InicioB)
-        $choque = ($turnoNuevo->hora_inicio < $existente->hora_fin) && 
-                  ($turnoNuevo->hora_fin > $existente->hora_inicio);
-
-        if ($choque) {
-            return response()->json([
-                'message' => "Conflicto: El turno '{$turnoNuevo->nombre_turno}' choca con '{$existente->nombre_turno}' ya asignado."
-            ], 422);
-        }
-    }
-
-    // 5. CREAR LA ASIGNACIÓN CON EL SERVICIO DETECTADO
+    // 4. CREAR LA ASIGNACIÓN
     $asignacion = TurnoAsignado::create([
-        'usuario_id'  => $usuarioDestino->id,
-        'servicio_id' => $servicioId, // Se asigna automáticamente
+        'usuario_id'  => $request->usuario_id,
+        'servicio_id' => $servicioId,
         'turno_id'    => $request->turno_id,
         'semana_id'   => $semana->id,
         'mes_id'      => $semana->mes_id,
@@ -98,15 +80,11 @@ class TurnoAsignadoController extends Controller
         'observacion' => $request->observacion
     ]);
 
-    $asignacion->load(['usuario.persona', 'usuario.categoria', 'servicio', 'turno']);
-    
     return response()->json([
-        'message' => 'Turno asignado correctamente en ' . $asignacion->servicio->nombre, 
-        'data' => $asignacion
+        'message' => 'Turno asignado correctamente', 
+        'data' => $asignacion->load(['usuario.persona', 'turno'])
     ], 201);
 }
-// En Laravel: TurnoAsignadoController.php o similar
-
 public function getEquipoPorJerarquia($servicio_id)
 {
     // 1. Buscamos los usuarios vinculados a este servicio
@@ -306,7 +284,7 @@ public function getEquipoFiltrado(Request $request)
         // Obtenemos los IDs desde la URL (?servicio_id=X&categoria_id=Y)
         $servicio_id = $request->query('servicio_id');
         $categoria_id = $request->query('categoria_id');
-
+        $semana_id = $request->query('semana_id');
         // 1. Empezamos la consulta con el modelo User
         // Filtramos por la relación 'servicios' (debe estar definida en tu modelo User)
         $query = \App\Models\User::whereHas('servicios', function($q) use ($servicio_id) {
@@ -319,16 +297,27 @@ public function getEquipoFiltrado(Request $request)
             $query->where('categoria_id', $categoria_id);
         }
 
-        // 3. Obtenemos los datos con sus relaciones para evitar errores
-        $equipo = $query->with(['persona', 'categoria'])->get();
+        $equipo = $query->with(['persona', 'categoria', 'turnosAsignados' => function($q) use ($semana_id) {
+            $q->where('semana_id', $semana_id)->with('turno');
+        }])->get();
 
+              
+        
         // 4. Mapeamos el resultado para que coincida con lo que espera tu Angular
         $resultado = $equipo->map(function($user) {
             return [
                 'usuario_id'     => $user->id,
                 'usuario_nombre' => $user->persona ? $user->persona->nombre_completo : $user->name,
                 'categoria_nombre' => $user->categoria ? $user->categoria->nombre : 'Sin categoría',
-                'turnos'         => [] // Esto evitará errores en el *ngFor de tu HTML
+                'turnos' => $user->turnosAsignados->map(function($ta) {
+                    return [
+                        'id_asignacion' => $ta->id,
+                        'nombre_turno'  => $ta->turno->nombre_turno,
+                        'horario'       => $ta->turno->hora_inicio . ' - ' . $ta->turno->hora_fin,
+                        'fecha'         => $ta->fecha,
+                        'color'         => $ta->turno->color ?? '#52600c' // Por si usas colores en el badge
+                    ];
+                })       
             ];
         });
 
