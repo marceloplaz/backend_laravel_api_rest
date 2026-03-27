@@ -42,19 +42,6 @@ public function store(Request $request)
 
     $servicioId = $asignacionServicio->servicio_id;
 
-    // --- ❌ BLOQUE ELIMINADO PARA FLEXIBILIZAR ---
-    /* $usuarioDestino = \App\Models\User::with('categoria')->findOrFail($request->usuario_id);
-    $turnoNuevo = Turno::findOrFail($request->turno_id);
-
-    if ($turnoNuevo->categoria_id !== $usuarioDestino->categoria_id) {
-        return response()->json([
-            'message' => "Acceso denegado..."
-        ], 403);
-    }
-    */
-    // --------------------------------------------
-
-    // 2. LÓGICA DE CALENDARIO (Mantenla para que se guarden bien los IDs de semana/mes)
     $semana = Semana::where('fecha_inicio', '<=', $fechaFormateada)
         ->where('fecha_fin', '>=', $fechaFormateada)
         ->with('mes.gestion')
@@ -281,33 +268,31 @@ public function reporteHorasSemana(Request $request, $semana_id, $usuario_id = n
 public function getEquipoFiltrado(Request $request)
 {
     try {
-        // Obtenemos los IDs desde la URL (?servicio_id=X&categoria_id=Y)
         $servicio_id = $request->query('servicio_id');
         $categoria_id = $request->query('categoria_id');
         $semana_id = $request->query('semana_id');
-        // 1. Empezamos la consulta con el modelo User
-        // Filtramos por la relación 'servicios' (debe estar definida en tu modelo User)
+
+        // 1. Consulta base de usuarios en el servicio
         $query = \App\Models\User::whereHas('servicios', function($q) use ($servicio_id) {
             $q->where('servicios.id', $servicio_id);
         });
 
-        // 2. Filtramos por categoría si no se seleccionó "Todas"
-        // En tu HeidiSQL vimos que la columna se llama 'categoria_id'
-        if ($categoria_id && $categoria_id !== 'Todas' && $categoria_id !== 'null') {
+        // 2. FILTRO SEGURO: Solo filtramos si categoria_id es un número
+        // Esto evita el Error 500 cuando llega "Todas" o "Médicos" como string
+        if ($categoria_id && is_numeric($categoria_id)) {
             $query->where('categoria_id', $categoria_id);
         }
 
+        // 3. Carga de datos y turnos de la semana
         $equipo = $query->with(['persona', 'categoria', 'turnosAsignados' => function($q) use ($semana_id) {
             $q->where('semana_id', $semana_id)->with('turno');
         }])->get();
 
-              
-        
-        // 4. Mapeamos el resultado para que coincida con lo que espera tu Angular
+        // 4. Mapeo para el formato que espera tu Angular
         $resultado = $equipo->map(function($user) {
             return [
-                'usuario_id'     => $user->id,
-                'usuario_nombre' => $user->persona ? $user->persona->nombre_completo : $user->name,
+                'usuario_id'       => $user->id,
+                'usuario_nombre'   => $user->persona ? $user->persona->nombre_completo : $user->name,
                 'categoria_nombre' => $user->categoria ? $user->categoria->nombre : 'Sin categoría',
                 'turnos' => $user->turnosAsignados->map(function($ta) {
                     return [
@@ -315,7 +300,7 @@ public function getEquipoFiltrado(Request $request)
                         'nombre_turno'  => $ta->turno->nombre_turno,
                         'horario'       => $ta->turno->hora_inicio . ' - ' . $ta->turno->hora_fin,
                         'fecha'         => $ta->fecha,
-                        'color'         => $ta->turno->color ?? '#52600c' // Por si usas colores en el badge
+                        'color'         => $ta->turno->color ?? '#52600c'
                     ];
                 })       
             ];
@@ -329,7 +314,7 @@ public function getEquipoFiltrado(Request $request)
     } catch (\Exception $e) {
         return response()->json([
             'status' => 'error',
-            'message' => 'Error en el servidor: ' . $e->getMessage()
+            'message' => 'Error: ' . $e->getMessage()
         ], 500);
     }
 }
@@ -351,4 +336,169 @@ public function listaCategorias()
     }
 }
 
+/**
+ * REPLICAR SEMANA EN EL MES
+ * Toma todos los turnos de una semana específica y los copia a las demás semanas del mismo mes.
+ */
+public function replicarMes(Request $request)
+{
+    $request->validate([
+        'servicio_id' => 'required|exists:servicios,id',
+        'mes_id'      => 'required|exists:meses,id',
+        'semana_id'   => 'required|exists:semanas,id',
+    ]);
+
+    try {
+        return \DB::transaction(function () use ($request) {
+            // 1. Obtener los turnos de la semana "modelo" que queremos copiar
+            $turnosModelo = TurnoAsignado::where('semana_id', $request->semana_id)
+                ->where('servicio_id', $request->servicio_id)
+                ->get();
+
+            if ($turnosModelo->isEmpty()) {
+                return response()->json(['message' => 'La semana seleccionada no tiene turnos para replicar.'], 422);
+            }
+
+            // 2. Obtener las demás semanas que pertenecen al mismo mes
+            $otrasSemanas = Semana::where('mes_id', $request->mes_id)
+                ->where('id', '!=', $request->semana_id)
+                ->get();
+
+            $conteo = 0;
+
+            foreach ($otrasSemanas as $semanaDestino) {
+                foreach ($turnosModelo as $t) {
+                    // Replicamos el registro. replicate() crea una copia del modelo sin ID.
+                    $nuevoTurno = $t->replicate();
+                    
+                    // Ajustamos la semana_id a la nueva semana de destino
+                    $nuevoTurno->semana_id = $semanaDestino->id;
+                    
+                    /** * IMPORTANTE: La fecha exacta debe ajustarse al día de la semana.
+                     * Si el original fue un Lunes, el nuevo debe ser el Lunes de la semana destino.
+                     */
+                    $diaOriginal = Carbon::parse($t->fecha)->dayOfWeek;
+                    $nuevaFecha = Carbon::parse($semanaDestino->fecha_inicio)->addDays($diaOriginal - 1);
+                    
+                    $nuevoTurno->fecha = $nuevaFecha->format('Y-m-d');
+                    $nuevoTurno->save();
+                    $conteo++;
+                }
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'message' => "¡Proceso completado! Se han replicado {$conteo} turnos en el mes."
+            ]);
+        });
+    } catch (\Exception $e) {
+        return response()->json(['error' => 'Error al replicar: ' . $e->getMessage()], 500);
+    }
+}
+
+/**
+ * VACIAR TURNOS DEL MES
+ * Elimina todas las asignaciones de un servicio específico en un mes completo.
+ */
+public function vaciarMes(Request $request)
+{
+    $request->validate([
+        'servicio_id' => 'required|exists:servicios,id',
+        'mes_id'      => 'required|exists:meses,id',
+    ]);
+
+    try {
+        $eliminados = TurnoAsignado::where('mes_id', $request->mes_id)
+            ->where('servicio_id', $request->servicio_id)
+            ->delete();
+
+        return response()->json([
+            'status' => 'success',
+            'message' => "Se han eliminado {$eliminados} turnos del mes seleccionado."
+        ]);
+    } catch (\Exception $e) {
+        return response()->json(['error' => 'Error al vaciar: ' . $e->getMessage()], 500);
+    }
+}
+/**
+ * ROTACIÓN MENSUAL
+ * Toma todos los turnos de un mes base y los replica en el mes siguiente,
+ * pero rotando al personal una posición.
+ */
+public function rotarPersonalPorMes(Request $request)
+{
+    $request->validate([
+        'servicio_id' => 'required|exists:servicios,id',
+        'mes_base_id' => 'required|exists:meses,id', // Mes de donde copiamos
+        'mes_dest_id' => 'required|exists:meses,id', // Mes a donde rotamos
+    ]);
+
+    try {
+        return \DB::transaction(function () use ($request) {
+            // 1. Obtener el equipo del servicio (el orden define la rotación)
+            $equipoIds = \App\Models\UsuarioServicio::where('servicio_id', $request->servicio_id)
+                ->where('estado', true)
+                ->pluck('usuario_id')
+                ->toArray();
+            
+            $totalPersonal = count($equipoIds);
+
+            if ($totalPersonal === 0) {
+                return response()->json(['message' => 'No hay personal para rotar.'], 422);
+            }
+
+            // 2. Obtener todos los turnos del mes base
+            $turnosBase = TurnoAsignado::where('mes_id', $request->mes_base_id)
+                ->where('servicio_id', $request->servicio_id)
+                ->get();
+
+            // 3. Obtener las semanas del mes destino para mapear las fechas
+            $semanasDestino = \App\Models\Semana::where('mes_id', $request->mes_dest_id)
+                ->orderBy('id', 'asc')
+                ->get();
+
+            $conteo = 0;
+
+            foreach ($turnosBase as $t) {
+                $nuevoTurno = $t->replicate();
+
+                // --- LÓGICA DE ROTACIÓN MENSUAL (+1 posición) ---
+                $posicionActual = array_search($t->usuario_id, $equipoIds);
+                if ($posicionActual !== false) {
+                    $nuevaPosicion = ($posicionActual + 1) % $totalPersonal;
+                    $nuevoTurno->usuario_id = $equipoIds[$nuevaPosicion];
+                }
+
+                // --- MAPEO DE FECHAS AL NUEVO MES ---
+                // Buscamos a qué número de semana pertenecía (1, 2, 3...)
+                $numSemanaOriginal = \App\Models\Semana::where('mes_id', $request->mes_base_id)
+                    ->where('id', '<=', $t->semana_id)
+                    ->count();
+
+                // Asignamos la semana correspondiente en el mes destino
+                $semanaDestino = $semanasDestino[$numSemanaOriginal - 1] ?? $semanasDestino->last();
+                
+                $nuevoTurno->semana_id = $semanaDestino->id;
+                $nuevoTurno->mes_id = $request->mes_dest_id;
+
+                // Ajustar la fecha manteniendo el día de la semana (ej: el primer lunes del mes)
+                $diaSemana = Carbon::parse($t->fecha)->dayOfWeek;
+                $nuevoTurno->fecha = Carbon::parse($semanaDestino->fecha_inicio)
+                    ->addDays($diaSemana - 1)
+                    ->format('Y-m-d');
+
+                $nuevoTurno->observacion = "Rotación mensual desde mes ID: {$request->mes_base_id}";
+                $nuevoTurno->save();
+                $conteo++;
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'message' => "Rotación mensual completada. Se generaron {$conteo} turnos para el nuevo mes."
+            ]);
+        });
+    } catch (\Exception $e) {
+        return response()->json(['error' => $e->getMessage()], 500);
+    }
+}
 }

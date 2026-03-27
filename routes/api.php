@@ -55,7 +55,8 @@ Route::prefix("v1")->group(function(){
         Route::get('incidencias', [IncidenciaController::class, 'index']);
         Route::post('incidencias', [IncidenciaController::class, 'store'])
             ->middleware('jugadordeunbit:reportar_incidencia');
-        Route::put('incidencias/{id}/resolver', [IncidenciaController::class, 'resolver'])
+       
+            Route::put('incidencias/{id}/resolver', [IncidenciaController::class, 'resolver'])
             ->middleware('jugadordeunbit:resolver_incidencia');
 
         // --- 📅 CONFIGURACIÓN DE CALENDARIO ---
@@ -77,22 +78,32 @@ Route::prefix("v1")->group(function(){
         // --- 👥 LÓGICA DE ASIGNACIÓN A PERSONAL ---
         Route::prefix('turnos-asignados')->group(function () {
             
-            // ❌ HEMOS QUITADO 'equipo-filtrado' y 'categorias-lista' de aquí 
-            // para que no choquen con las versiones públicas de arriba.
-
+            
+        
             Route::post('/', [TurnoAsignadoController::class, 'store'])
                 ->middleware('jugadordeunbit:asignar_turnos'); 
             
-            Route::post('intercambiar', [TurnoAsignadoController::class, 'intercambiarTurno'])
-                ->middleware('jugadordeunbit:asignar_turnos');
+           Route::post('intercambiar', [TurnoAsignadoController::class, 'intercambiarTurno'])
+            ->middleware('jugadordeunbit:asignar_turnos');
             
-            Route::get('reporte-semanal/{semana_id}/{usuario_id?}', [TurnoAsignadoController::class, 'reporteHorasSemana']);
+           Route::get('reporte-semanal/{semana_id}/{usuario_id?}', [TurnoAsignadoController::class, 'reporteHorasSemana']);
             
             Route::get('/servicio/{servicioId}/equipo', [TurnoAsignadoController::class, 'verTurnosPorJerarquia'])
-                ->middleware('jugadordeunbit:ver_equipo');
+             ->middleware('jugadordeunbit:ver_equipo');
 
             Route::get('/reporte/{mes_id}', [TurnoAsignadoController::class, 'reporteMensual'])
-                ->middleware('jugadordeunbit:ver_reportes');
+               ->middleware('jugadordeunbit:ver_reportes');
+                
+            Route::post('replicar-mes', [TurnoAsignadoController::class, 'replicarMes'])
+            ->middleware('jugadordeunbit:asignar_turnos');
+            
+           Route::post('/vaciar-mes', [TurnoAsignadoController::class, 'vaciarMes'])
+           ->middleware('jugadordeunbit:asignar_turnos');
+
+            Route::post('rotar-mensual', [TurnoAsignadoController::class, 'rotarPersonalPorMes'])
+            ->middleware('jugadordeunbit:asignar_turnos');
+            
+            
 
             Route::get('/mis-turnos', [TurnoAsignadoController::class, 'misTurnos']); 
         });

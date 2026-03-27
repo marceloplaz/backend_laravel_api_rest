@@ -7,43 +7,41 @@ use Illuminate\Http\Request;
 
 class IncidenciaController extends Controller
 {
-    // Listar incidencias (para el técnico)
+    // Listar incidencias para el técnico
     public function index() {
+        // Cargamos relaciones para saber quién reporta y en qué servicio
         return IncidenciaTecnica::with(['usuario.persona', 'servicio'])
-            ->orderBy('fecha', 'desc')
+            ->orderBy('created_at', 'desc')
             ->get();
     }
 
     public function incidenciasCalendario(Request $request) {
-    // Obtenemos incidencias de un mes específico
-    $incidencias = IncidenciaTecnica::whereMonth('fecha', $request->mes)
-        ->select('id', 'fecha', 'categoria', 'estado')
-        ->get();
+        $request->validate(['mes' => 'required|integer']);
 
-    return response()->json($incidencias);
-}
-    // Guardar reporte (desde la pantalla de turnos)
+        // Obtenemos incidencias de un mes específico
+        $incidencias = IncidenciaTecnica::whereMonth('fecha', $request->mes)
+            ->select('id', 'fecha', 'estado', 'prioridad', 'servicio_id')
+            ->get();
+
+        return response()->json($incidencias);
+    }
+
+    // Guardar reporte
     public function store(Request $request) {
-        $categoriasValidas = implode(',', [
-        'luz', 'agua', 'equipo medico', 'computacion'
+        $request->validate([
+            'servicio_id' => 'required|exists:servicios,id',
+            'fecha'       => 'required|date',
+            'descripcion' => 'required|string|min:10',
+            'prioridad'   => 'nullable|in:baja,media,alta'
         ]);
 
-        $request->validate([
-        'categoria' => "required|in:$categoriasValidas", // Valida que sea una de la lista
-        'servicio_id' => 'required',
-        'fecha' => 'required|date',
-        'descripcion' => 'required'
-    ]);
-   
-    
-
         $incidencia = IncidenciaTecnica::create([
-            'usuario_id'  => auth()->id(),
+            'usuario_id'  => auth()->id() ?? 1, // Fallback a 1 si no hay auth para pruebas
             'servicio_id' => $request->servicio_id,
-            'categoria'   => $request->categoria,
             'fecha'       => $request->fecha,
             'descripcion' => $request->descripcion,
             'prioridad'   => $request->prioridad ?? 'media',
+            'estado'      => 'pendiente',
         ]);
 
         return response()->json([
@@ -55,12 +53,13 @@ class IncidenciaController extends Controller
     // Actualizar estado (cuando el técnico lo arregla)
     public function resolver(Request $request, $id) {
         $incidencia = IncidenciaTecnica::findOrFail($id);
+        
         $incidencia->update([
-            'estado' => $request->estado, // 'en_proceso' o 'solucionado'
+            'estado' => $request->estado, // 'pendiente', 'en_proceso' o 'solucionado'
             'observacion_tecnica' => $request->observacion_tecnica,
             'fecha_solucion' => $request->estado == 'solucionado' ? now() : null
         ]);
 
-        return response()->json(["message" => "Estado de incidencia actualizado"]);
+        return response()->json(["message" => "Estado de incidencia actualizado correctamente"]);
     }
 }
