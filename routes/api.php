@@ -79,7 +79,7 @@ Route::prefix("v1")->group(function(){
         Route::prefix('turnos-asignados')->group(function () {
             
             
-        
+
             Route::post('/', [TurnoAsignadoController::class, 'store'])
                 ->middleware('jugadordeunbit:asignar_turnos'); 
             
@@ -102,8 +102,10 @@ Route::prefix("v1")->group(function(){
 
             Route::post('rotar-mensual', [TurnoAsignadoController::class, 'rotarPersonalPorMes'])
             ->middleware('jugadordeunbit:asignar_turnos');
-            
-            
+   
+    Route::post('actualizar', [TurnoAsignadoController::class, 'actualizarPosicion'])
+        ->middleware('jugadordeunbit:asignar_turnos');
+
 
             Route::get('/mis-turnos', [TurnoAsignadoController::class, 'misTurnos']); 
         });

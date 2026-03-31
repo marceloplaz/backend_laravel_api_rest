@@ -501,4 +501,66 @@ public function rotarPersonalPorMes(Request $request)
         return response()->json(['error' => $e->getMessage()], 500);
     }
 }
+
+public function actualizarPosicion(Request $request)
+{
+    try {
+        $request->validate([
+            'turno_id'         => 'required|exists:turnos_asignados,id',
+            'nuevo_usuario_id' => 'required|exists:users,id',
+            'nueva_fecha'      => 'required|date',
+        ]);
+
+        $asignacionOrigen = TurnoAsignado::findOrFail($request->turno_id);
+        
+        // Guardamos los datos originales para el posible intercambio
+        $antiguoUsuarioId = $asignacionOrigen->usuario_id;
+        $antiguaFecha = $asignacionOrigen->fecha;
+        $antiguaSemanaId = $asignacionOrigen->semana_id;
+        $antiguoMesId = $asignacionOrigen->mes_id;
+
+        // 1. Buscamos a qué semana pertenece la nueva fecha
+        $fechaFormateada = \Carbon\Carbon::parse($request->nueva_fecha)->format('Y-m-d');
+        $semanaDestino = Semana::where('fecha_inicio', '<=', $fechaFormateada)
+            ->where('fecha_fin', '>=', $fechaFormateada)->first();
+
+        // 2. ¿HAY UN TURNO EN EL DESTINO? (Intercambio)
+        $asignacionDestino = TurnoAsignado::where('usuario_id', $request->nuevo_usuario_id)
+            ->where('fecha', $fechaFormateada)
+            ->first();
+
+        if ($asignacionDestino) {
+            // El turno que estaba en el destino se va al origen
+            $asignacionDestino->update([
+                'usuario_id' => $antiguoUsuarioId,
+                'fecha'      => $antiguaFecha,
+                'semana_id'  => $antiguaSemanaId,
+                'mes_id'     => $antiguoMesId
+            ]);
+        }
+
+        // 3. El turno que arrastramos se va al destino
+        $asignacionOrigen->update([
+            'usuario_id' => $request->nuevo_usuario_id,
+            'fecha'      => $fechaFormateada,
+            'semana_id'  => $semanaDestino->id,
+            'mes_id'     => $semanaDestino->mes_id
+        ]);
+
+   return response()->json([
+    'status'      => 'success',
+    'message'     => $asignacionDestino ? 'Intercambio realizado' : 'Turno movido',
+    'intercambio' => (bool)$asignacionDestino,
+    'detalles'    => [
+        'origen_nombre'  => $asignacionOrigen->usuario->name,
+        'destino_nombre' => $asignacionDestino ? $asignacionDestino->usuario->name : 'Nadie',
+    ],
+    'data'        => $asignacionOrigen->load('usuario', 'turno', 'semana')
+]);
+
+    } catch (\Exception $e) {
+        return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
+    }
+}
+
 }
