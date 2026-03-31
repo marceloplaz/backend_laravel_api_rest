@@ -20,9 +20,13 @@ class TurnoAsignado extends Model
         'gestion_id',
         'fecha',
         'estado',
-        'observacion'
+        'observacion',
+        'es_intercambio'
     ];
-
+ protected $casts = [
+        'es_intercambio' => 'boolean',
+       
+    ];
     // Relaciones para el Controlador
     public function usuario() 
     { 

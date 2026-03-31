@@ -506,61 +506,78 @@ public function actualizarPosicion(Request $request)
 {
     try {
         $request->validate([
-            'turno_id'         => 'required|exists:turnos_asignados,id',
+            // IMPORTANTE: Verifica si tu tabla es 'turno_asignados' o 'turnos_asignados'
+            'turno_id'         => 'required|exists:turnos_asignados,id', 
             'nuevo_usuario_id' => 'required|exists:users,id',
             'nueva_fecha'      => 'required|date',
         ]);
 
-        $asignacionOrigen = TurnoAsignado::findOrFail($request->turno_id);
-        
-        // Guardamos los datos originales para el posible intercambio
-        $antiguoUsuarioId = $asignacionOrigen->usuario_id;
-        $antiguaFecha = $asignacionOrigen->fecha;
-        $antiguaSemanaId = $asignacionOrigen->semana_id;
-        $antiguoMesId = $asignacionOrigen->mes_id;
+        return \DB::transaction(function () use ($request) {
+            // Cargamos el origen con su relación de usuario para la observación
+            $asignacionOrigen = TurnoAsignado::with('usuario.persona')->findOrFail($request->turno_id);
+            
+            $antiguoUsuarioId = $asignacionOrigen->usuario_id;
+            $antiguaFecha     = $asignacionOrigen->fecha;
+            $antiguaSemanaId  = $asignacionOrigen->semana_id;
+            $antiguoMesId     = $asignacionOrigen->mes_id;
+            $nombreOrigen     = $asignacionOrigen->usuario->persona->nombre_completo ?? $asignacionOrigen->usuario->name;
 
-        // 1. Buscamos a qué semana pertenece la nueva fecha
-        $fechaFormateada = \Carbon\Carbon::parse($request->nueva_fecha)->format('Y-m-d');
-        $semanaDestino = Semana::where('fecha_inicio', '<=', $fechaFormateada)
-            ->where('fecha_fin', '>=', $fechaFormateada)->first();
+            $fechaDestinoFormateada = \Carbon\Carbon::parse($request->nueva_fecha)->format('Y-m-d');
+            
+            $semanaDestino = Semana::where('fecha_inicio', '<=', $fechaDestinoFormateada)
+                ->where('fecha_fin', '>=', $fechaDestinoFormateada)->first();
 
-        // 2. ¿HAY UN TURNO EN EL DESTINO? (Intercambio)
-        $asignacionDestino = TurnoAsignado::where('usuario_id', $request->nuevo_usuario_id)
-            ->where('fecha', $fechaFormateada)
-            ->first();
+            if (!$semanaDestino) {
+                throw new \Exception("La fecha de destino no está configurada en el calendario.");
+            }
 
-        if ($asignacionDestino) {
-            // El turno que estaba en el destino se va al origen
-            $asignacionDestino->update([
-                'usuario_id' => $antiguoUsuarioId,
-                'fecha'      => $antiguaFecha,
-                'semana_id'  => $antiguaSemanaId,
-                'mes_id'     => $antiguoMesId
+            // 2. ¿HAY ALGUIEN EN EL DESTINO?
+            $asignacionDestino = TurnoAsignado::with('usuario.persona')
+                ->where('usuario_id', $request->nuevo_usuario_id)
+                ->where('fecha', $fechaDestinoFormateada)
+                ->first();
+
+            $huboIntercambio = false;
+
+            if ($asignacionDestino) {
+                $huboIntercambio = true;
+                $nombreDestino = $asignacionDestino->usuario->persona->nombre_completo ?? $asignacionDestino->usuario->name;
+
+                // Movemos el del destino al lugar del origen
+                $asignacionDestino->update([
+                    'usuario_id'     => $antiguoUsuarioId,
+                    'fecha'          => $antiguaFecha,
+                    'semana_id'      => $antiguaSemanaId,
+                    'mes_id'         => $antiguoMesId,
+                    'observacion'    => "Intercambio: cedió su lugar a {$nombreOrigen}",
+                    'es_intercambio' => true 
+                ]);
+            }
+
+            // 3. Movemos el origen al destino
+            $asignacionOrigen->update([
+                'usuario_id'     => $request->nuevo_usuario_id,
+                'fecha'          => $fechaDestinoFormateada,
+                'semana_id'      => $semanaDestino->id,
+                'mes_id'         => $semanaDestino->mes_id,
+                'observacion'    => $huboIntercambio ? "Intercambio con {$nombreDestino}" : "Movido a espacio vacío",
+                'es_intercambio' => $huboIntercambio // Solo true si realmente hubo swap
             ]);
-        }
 
-        // 3. El turno que arrastramos se va al destino
-        $asignacionOrigen->update([
-            'usuario_id' => $request->nuevo_usuario_id,
-            'fecha'      => $fechaFormateada,
-            'semana_id'  => $semanaDestino->id,
-            'mes_id'     => $semanaDestino->mes_id
-        ]);
-
-   return response()->json([
-    'status'      => 'success',
-    'message'     => $asignacionDestino ? 'Intercambio realizado' : 'Turno movido',
-    'intercambio' => (bool)$asignacionDestino,
-    'detalles'    => [
-        'origen_nombre'  => $asignacionOrigen->usuario->name,
-        'destino_nombre' => $asignacionDestino ? $asignacionDestino->usuario->name : 'Nadie',
-    ],
-    'data'        => $asignacionOrigen->load('usuario', 'turno', 'semana')
-]);
+            return response()->json([
+                'status'      => 'success',
+                'message'     => $huboIntercambio ? 'Intercambio mutuo realizado' : 'Turno movido',
+                'intercambio' => $huboIntercambio,
+                // Cargamos todo para que Angular actualice la UI sin recargar página
+                'data'        => $asignacionOrigen->load(['usuario.persona', 'turno', 'semana'])
+            ]);
+        });
 
     } catch (\Exception $e) {
-        return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
+        return response()->json([
+            'status'  => 'error', 
+            'message' => 'Error en el servidor: ' . $e->getMessage()
+        ], 500);
     }
 }
-
 }
