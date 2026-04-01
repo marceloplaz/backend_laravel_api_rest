@@ -93,6 +93,9 @@ Route::prefix("v1")->group(function () {
                 Route::post('/vaciar-mes', [TurnoAsignadoController::class, 'vaciarMes']);
                 Route::post('rotar-mensual', [TurnoAsignadoController::class, 'rotarPersonalPorMes']);
                 Route::post('actualizar', [TurnoAsignadoController::class, 'actualizarPosicion']);
+
+                Route::put('{id}', [TurnoAsignadoController::class, 'update']);      // Para editar tipo de turno u observación
+                Route::delete('{id}', [TurnoAsignadoController::class, 'destroy']); // Para eliminar una asignación
             });
 
             // Rutas de visualización con permisos específicos

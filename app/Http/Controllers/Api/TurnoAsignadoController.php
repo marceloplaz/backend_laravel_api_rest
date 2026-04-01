@@ -9,6 +9,7 @@ use App\Models\Turno;
 use App\Models\Servicio;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB; // IMPORTANTE: Para corregir el error "Class DB not found"
 
 class TurnoAsignadoController extends Controller
 {
@@ -420,85 +421,87 @@ public function vaciarMes(Request $request)
         return response()->json(['error' => 'Error al vaciar: ' . $e->getMessage()], 500);
     }
 }
-/**
- * ROTACIÓN MENSUAL
- * Toma todos los turnos de un mes base y los replica en el mes siguiente,
- * pero rotando al personal una posición.
- */
+
 public function rotarPersonalPorMes(Request $request)
-{
-    $request->validate([
-        'servicio_id' => 'required|exists:servicios,id',
-        'mes_base_id' => 'required|exists:meses,id', // Mes de donde copiamos
-        'mes_dest_id' => 'required|exists:meses,id', // Mes a donde rotamos
-    ]);
+    {
+        $servicioId = $request->servicio_id;
+        $mesOrigenId = $request->mes_id;
+        $mesDestinoId = $request->mes_destino;
 
-    try {
-        return \DB::transaction(function () use ($request) {
-            // 1. Obtener el equipo del servicio (el orden define la rotación)
-            $equipoIds = \App\Models\UsuarioServicio::where('servicio_id', $request->servicio_id)
-                ->where('estado', true)
-                ->pluck('usuario_id')
-                ->toArray();
-            
-            $totalPersonal = count($equipoIds);
+        // 1. Obtener personal único para el mapa circular
+        $usuarios = DB::table('turnos_asignados')
+            ->where('servicio_id', $servicioId)
+            ->where('mes_id', $mesOrigenId)
+            ->distinct()
+            ->pluck('usuario_id')
+            ->toArray();
 
-            if ($totalPersonal === 0) {
-                return response()->json(['message' => 'No hay personal para rotar.'], 422);
-            }
+        if (count($usuarios) < 2) {
+            return response()->json(['status' => 'error', 'message' => 'Mínimo 2 personas.'], 400);
+        }
 
-            // 2. Obtener todos los turnos del mes base
-            $turnosBase = TurnoAsignado::where('mes_id', $request->mes_base_id)
-                ->where('servicio_id', $request->servicio_id)
+        $mapaRotacion = [];
+        for ($i = 0; $i < count($usuarios); $i++) {
+            $indiceSiguiente = ($i + 1) % count($usuarios);
+            $mapaRotacion[$usuarios[$i]] = $usuarios[$indiceSiguiente];
+        }
+
+        DB::beginTransaction();
+        try {
+            // 2. Limpiar mes destino
+            DB::table('turnos_asignados')
+                ->where('servicio_id', $servicioId)
+                ->where('mes_id', $mesDestinoId)
+                ->delete();
+
+            // 3. Obtener turnos de origen
+            $turnosOrigen = DB::table('turnos_asignados')
+                ->where('servicio_id', $servicioId)
+                ->where('mes_id', $mesOrigenId)
                 ->get();
 
-            // 3. Obtener las semanas del mes destino para mapear las fechas
-            $semanasDestino = \App\Models\Semana::where('mes_id', $request->mes_dest_id)
-                ->orderBy('id', 'asc')
-                ->get();
-
-            $conteo = 0;
-
-            foreach ($turnosBase as $t) {
-                $nuevoTurno = $t->replicate();
-
-                // --- LÓGICA DE ROTACIÓN MENSUAL (+1 posición) ---
-                $posicionActual = array_search($t->usuario_id, $equipoIds);
-                if ($posicionActual !== false) {
-                    $nuevaPosicion = ($posicionActual + 1) % $totalPersonal;
-                    $nuevoTurno->usuario_id = $equipoIds[$nuevaPosicion];
-                }
-
-                // --- MAPEO DE FECHAS AL NUEVO MES ---
-                // Buscamos a qué número de semana pertenecía (1, 2, 3...)
-                $numSemanaOriginal = \App\Models\Semana::where('mes_id', $request->mes_base_id)
-                    ->where('id', '<=', $t->semana_id)
-                    ->count();
-
-                // Asignamos la semana correspondiente en el mes destino
-                $semanaDestino = $semanasDestino[$numSemanaOriginal - 1] ?? $semanasDestino->last();
+            foreach ($turnosOrigen as $turno) {
+                $nuevoUsuarioId = $mapaRotacion[$turno->usuario_id];
                 
-                $nuevoTurno->semana_id = $semanaDestino->id;
-                $nuevoTurno->mes_id = $request->mes_dest_id;
+                // --- LÓGICA DE COINCIDENCIA SEMANAL ---
+                // Obtenemos qué número de semana (1, 2, 3...) y qué día (lunes, martes...) es
+                $infoSemanaOrigen = DB::table('semanas')->where('id', $turno->semana_id)->first();
+                $diaDeLaSemana = Carbon::parse($turno->fecha)->dayOfWeek; // 0 (dom) a 6 (sab)
 
-                // Ajustar la fecha manteniendo el día de la semana (ej: el primer lunes del mes)
-                $diaSemana = Carbon::parse($t->fecha)->dayOfWeek;
-                $nuevoTurno->fecha = Carbon::parse($semanaDestino->fecha_inicio)
-                    ->addDays($diaSemana - 1)
-                    ->format('Y-m-d');
+                // Buscamos la semana equivalente en el mes de destino
+                // Ejemplo: Si era Semana 2 de Marzo, buscamos Semana 2 de Abril
+                $semanaDestino = DB::table('semanas')
+                    ->where('mes_id', $mesDestinoId)
+                    ->where('numero_semana', $infoSemanaOrigen->numero_semana)
+                    ->first();
 
-                $nuevoTurno->observacion = "Rotación mensual desde mes ID: {$request->mes_base_id}";
-                $nuevoTurno->save();
-                $conteo++;
+                if ($semanaDestino) {
+                    // Calculamos la fecha exacta del mismo día en la nueva semana
+                    $nuevaFecha = Carbon::parse($semanaDestino->fecha_inicio)->addDays(
+                        ($diaDeLaSemana == 0 ? 6 : $diaDeLaSemana - 1) // Ajuste para que Lunes sea 0
+                    );
+
+                    DB::table('turnos_asignados')->insert([
+                        'usuario_id'  => $nuevoUsuarioId,
+                        'servicio_id' => $servicioId,
+                        'turno_id'    => $turno->turno_id,
+                        'mes_id'      => $mesDestinoId,
+                        'semana_id'   => $semanaDestino->id,
+                        'gestion_id'  => $turno->gestion_id,
+                        'fecha'       => $nuevaFecha->toDateString(),
+                        'estado'      => 'programado',
+                        'created_at'  => now(),
+                        'updated_at'  => now()
+                    ]);
+                }
             }
 
-            return response()->json([
-                'status' => 'success',
-                'message' => "Rotación mensual completada. Se generaron {$conteo} turnos para el nuevo mes."
-            ]);
-        });
-    } catch (\Exception $e) {
-        return response()->json(['error' => $e->getMessage()], 500);
+            DB::commit();
+            return response()->json(['status' => 'success', 'message' => 'Rotación lógica completada.']);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
     }
 }
 
@@ -580,4 +583,58 @@ public function actualizarPosicion(Request $request)
         ], 500);
     }
 }
+
+/**
+ * MODIFICAR UN TURNO ESPECÍFICO
+ * Permite cambiar el tipo de turno o la observación de una asignación ya existente.
+ */
+public function update(Request $request, $id)
+{
+    try {
+        $request->validate([
+            'turno_id'    => 'required|exists:turnos,id',
+            'observacion' => 'nullable|string|max:500',
+            'estado'      => 'nullable|string'
+        ]);
+
+        $asignacion = TurnoAsignado::findOrFail($id);
+
+        $asignacion->update([
+            'turno_id'    => $request->turno_id,
+            'observacion' => $request->observacion ?? $asignacion->observacion,
+            'estado'      => $request->estado ?? $asignacion->estado,
+        ]);
+
+        return response()->json([
+            'status'  => 'success',
+            'message' => 'Turno modificado correctamente',
+            'data'    => $asignacion->load(['turno', 'usuario.persona'])
+        ]);
+
+    } catch (\Exception $e) {
+        return response()->json([
+            'status'  => 'error',
+            'message' => 'Error al actualizar: ' . $e->getMessage()
+        ], 500);
+    }
+}
+
+/**
+ * ELIMINAR UN TURNO ESPECÍFICO
+ */
+public function destroy($id)
+{
+    try {
+        $asignacion = TurnoAsignado::findOrFail($id);
+        $asignacion->delete();
+
+        return response()->json([
+            'status'  => 'success',
+            'message' => 'Asignación eliminada correctamente'
+        ]);
+    } catch (\Exception $e) {
+        return response()->json(['error' => $e->getMessage()], 500);
+    }
+}
+
 }
