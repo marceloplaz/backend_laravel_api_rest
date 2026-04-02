@@ -81,8 +81,20 @@ Route::prefix("v1")->group(function () {
                 Route::put('/sync', [ServicioTurnoController::class, 'sync']);
                 Route::delete('/{turnoId}', [ServicioTurnoController::class, 'quitar']);
             });
+        
+        Route::prefix('novedades')->group(function () {
+        Route::get('/', [NovedadLaboralController::class, 'index']); 
+        Route::post('/registrar', [NovedadLaboralController::class, 'store']); 
+        Route::get('/{id}', [NovedadLaboralController::class, 'show']);
+        
+        // Esta es la que usaremos para el intercambio físico de fechas
+        Route::post('/permutar-turnos', [NovedadLaboralController::class, 'permutarConNovedad']);
+    });
 
-        // --- 👥 LÓGICA DE ASIGNACIÓN A PERSONAL ---
+
+   
+   
+            // --- 👥 LÓGICA DE ASIGNACIÓN A PERSONAL ---
         Route::prefix('turnos-asignados')->group(function () {
 
             // Rutas de escritura/gestión (Solo personal autorizado)

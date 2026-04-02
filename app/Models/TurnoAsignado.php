@@ -58,4 +58,9 @@ class TurnoAsignado extends Model
     { 
         return $this->belongsTo(Gestion::class, 'gestion_id'); 
     }
+    // Dentro de la clase TurnoAsignado
+    public function novedad()
+    {
+    return $this->hasOne(NovedadLaboral::class, 'asignacion_id');
+    }
 }

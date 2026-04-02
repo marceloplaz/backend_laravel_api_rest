@@ -257,10 +257,11 @@ public function reporteHorasSemana(Request $request, $semana_id, $usuario_id = n
         ];
     })->values();
 
-    return response()->json([
-        'semana_id' => $semana_id,
-        'data' => $reporte
-    ]);
+// En Laravel: TurnoAsignadoController.php
+return response()->json([
+    'status' => 'success',
+    'data' => $resultado  // Cambia 'equipo_visible' por 'data'
+], 200);
 }
 /**
  * 5. OBTENER EQUIPO FILTRADO (Para el frontend de Angular)
@@ -351,37 +352,43 @@ public function replicarMes(Request $request)
 
     try {
         return \DB::transaction(function () use ($request) {
-            // 1. Obtener los turnos de la semana "modelo" que queremos copiar
             $turnosModelo = TurnoAsignado::where('semana_id', $request->semana_id)
                 ->where('servicio_id', $request->servicio_id)
                 ->get();
 
             if ($turnosModelo->isEmpty()) {
-                return response()->json(['message' => 'La semana seleccionada no tiene turnos para replicar.'], 422);
+                return response()->json(['message' => 'La semana seleccionada no tiene turnos.'], 422);
             }
 
-            // 2. Obtener las demás semanas que pertenecen al mismo mes
             $otrasSemanas = Semana::where('mes_id', $request->mes_id)
                 ->where('id', '!=', $request->semana_id)
                 ->get();
 
+            // IMPORTANTE: Limpiar turnos existentes en las semanas destino antes de replicar
+            // Esto evita que las horas se dupliquen (el error de las 24h)
+            TurnoAsignado::whereIn('semana_id', $otrasSemanas->pluck('id'))
+                ->where('servicio_id', $request->servicio_id)
+                ->delete();
+
             $conteo = 0;
 
             foreach ($otrasSemanas as $semanaDestino) {
+                $inicioDestino = Carbon::parse($semanaDestino->fecha_inicio);
+
                 foreach ($turnosModelo as $t) {
-                    // Replicamos el registro. replicate() crea una copia del modelo sin ID.
-                    $nuevoTurno = $t->replicate();
+                    $fechaOriginal = Carbon::parse($t->fecha);
                     
-                    // Ajustamos la semana_id a la nueva semana de destino
+                    // Calculamos la diferencia de días respecto al inicio de SU propia semana
+                    // Si el turno era Lunes y la semana empezó Lunes, la diferencia es 0.
+                    $semanaOriginal = Semana::find($t->semana_id);
+                    $diferenciaDias = Carbon::parse($semanaOriginal->fecha_inicio)->diffInDays($fechaOriginal);
+
+                    $nuevoTurno = $t->replicate();
                     $nuevoTurno->semana_id = $semanaDestino->id;
                     
-                    /** * IMPORTANTE: La fecha exacta debe ajustarse al día de la semana.
-                     * Si el original fue un Lunes, el nuevo debe ser el Lunes de la semana destino.
-                     */
-                    $diaOriginal = Carbon::parse($t->fecha)->dayOfWeek;
-                    $nuevaFecha = Carbon::parse($semanaDestino->fecha_inicio)->addDays($diaOriginal - 1);
+                    // La nueva fecha es: Inicio de semana destino + los mismos días de diferencia
+                    $nuevoTurno->fecha = $inicioDestino->copy()->addDays($diferenciaDias)->format('Y-m-d');
                     
-                    $nuevoTurno->fecha = $nuevaFecha->format('Y-m-d');
                     $nuevoTurno->save();
                     $conteo++;
                 }
@@ -389,11 +396,11 @@ public function replicarMes(Request $request)
 
             return response()->json([
                 'status' => 'success',
-                'message' => "¡Proceso completado! Se han replicado {$conteo} turnos en el mes."
+                'message' => "¡Proceso completado! Se han replicado {$conteo} turnos."
             ]);
         });
     } catch (\Exception $e) {
-        return response()->json(['error' => 'Error al replicar: ' . $e->getMessage()], 500);
+        return response()->json(['error' => 'Error: ' . $e->getMessage()], 500);
     }
 }
 
@@ -505,89 +512,88 @@ public function rotarPersonalPorMes(Request $request)
     }
 }
 
+
 public function actualizarPosicion(Request $request)
 {
+    $request->validate([
+        'turno_id'         => 'required|exists:turnos_asignados,id',
+        'nuevo_usuario_id' => 'required|exists:users,id',
+        'nueva_fecha'      => 'required|date',
+    ]);
+
     try {
-        $request->validate([
-            // IMPORTANTE: Verifica si tu tabla es 'turno_asignados' o 'turnos_asignados'
-            'turno_id'         => 'required|exists:turnos_asignados,id', 
-            'nuevo_usuario_id' => 'required|exists:users,id',
-            'nueva_fecha'      => 'required|date',
-        ]);
-
-        return \DB::transaction(function () use ($request) {
-            // Cargamos el origen con su relación de usuario para la observación
-            $asignacionOrigen = TurnoAsignado::with('usuario.persona')->findOrFail($request->turno_id);
+        return DB::transaction(function () use ($request) {
+            // Cargamos el origen con sus relaciones
+            $asigOrigen = TurnoAsignado::with(['usuario.persona'])->findOrFail($request->turno_id);
             
-            $antiguoUsuarioId = $asignacionOrigen->usuario_id;
-            $antiguaFecha     = $asignacionOrigen->fecha;
-            $antiguaSemanaId  = $asignacionOrigen->semana_id;
-            $antiguoMesId     = $asignacionOrigen->mes_id;
-            $nombreOrigen     = $asignacionOrigen->usuario->persona->nombre_completo ?? $asignacionOrigen->usuario->name;
+            $fechaAntigua = $asigOrigen->fecha;
+            $userAntiguo  = $asigOrigen->usuario_id;
+            $semanaAntigua = $asigOrigen->semana_id;
 
-            $fechaDestinoFormateada = \Carbon\Carbon::parse($request->nueva_fecha)->format('Y-m-d');
-            
-            $semanaDestino = Semana::where('fecha_inicio', '<=', $fechaDestinoFormateada)
-                ->where('fecha_fin', '>=', $fechaDestinoFormateada)->first();
+            // Evitar el error de "nombre_completo on null"
+            $nombreOrigen = $asigOrigen->usuario?->persona?->nombre_completo ?? 'Usuario Origen';
 
-            if (!$semanaDestino) {
-                throw new \Exception("La fecha de destino no está configurada en el calendario.");
-            }
+            $fechaNueva = Carbon::parse($request->nueva_fecha)->format('Y-m-d');
 
-            // 2. ¿HAY ALGUIEN EN EL DESTINO?
-            $asignacionDestino = TurnoAsignado::with('usuario.persona')
+            // Buscamos si hay alguien en el destino
+            $asigDestino = TurnoAsignado::with(['usuario.persona'])
                 ->where('usuario_id', $request->nuevo_usuario_id)
-                ->where('fecha', $fechaDestinoFormateada)
+                ->where('fecha', $fechaNueva)
+                ->where('servicio_id', $asigOrigen->servicio_id)
                 ->first();
 
-            $huboIntercambio = false;
+            if ($asigDestino) {
+                $nombreDestino = $asigDestino->usuario?->persona?->nombre_completo ?? 'Usuario Destino';
 
-            if ($asignacionDestino) {
-                $huboIntercambio = true;
-                $nombreDestino = $asignacionDestino->usuario->persona->nombre_completo ?? $asignacionDestino->usuario->name;
-
-                // Movemos el del destino al lugar del origen
-                $asignacionDestino->update([
-                    'usuario_id'     => $antiguoUsuarioId,
-                    'fecha'          => $antiguaFecha,
-                    'semana_id'      => $antiguaSemanaId,
-                    'mes_id'         => $antiguoMesId,
-                    'observacion'    => "Intercambio: cedió su lugar a {$nombreOrigen}",
-                    'es_intercambio' => true 
+                // Intercambio Físico: El de destino se va a la posición de origen
+                $asigDestino->update([
+                    'usuario_id'  => $userAntiguo,
+                    'fecha'       => $fechaAntigua,
+                    'semana_id'   => $semanaAntigua,
+                    'observacion' => "Intercambio: Cedió lugar a $nombreOrigen"
                 ]);
+
+                // El de origen se va a la posición de destino
+                $asigOrigen->update([
+                    'usuario_id'  => $request->nuevo_usuario_id,
+                    'fecha'       => $fechaNueva,
+                    'semana_id'   => $this->obtenerSemanaIdPorFecha($fechaNueva),
+                    'observacion' => "Intercambio: Tomó lugar de $nombreDestino"
+                ]);
+
+                $mensaje = "Intercambio realizado exitosamente.";
+            } else {
+                // Movimiento simple
+                $asigOrigen->update([
+                    'usuario_id' => $request->nuevo_usuario_id,
+                    'fecha'      => $fechaNueva,
+                    'semana_id'  => $this->obtenerSemanaIdPorFecha($fechaNueva),
+                    'observacion' => "Desplazamiento a $fechaNueva"
+                ]);
+                $mensaje = "Turno movido correctamente.";
             }
 
-            // 3. Movemos el origen al destino
-            $asignacionOrigen->update([
-                'usuario_id'     => $request->nuevo_usuario_id,
-                'fecha'          => $fechaDestinoFormateada,
-                'semana_id'      => $semanaDestino->id,
-                'mes_id'         => $semanaDestino->mes_id,
-                'observacion'    => $huboIntercambio ? "Intercambio con {$nombreDestino}" : "Movido a espacio vacío",
-                'es_intercambio' => $huboIntercambio // Solo true si realmente hubo swap
-            ]);
-
-            return response()->json([
-                'status'      => 'success',
-                'message'     => $huboIntercambio ? 'Intercambio mutuo realizado' : 'Turno movido',
-                'intercambio' => $huboIntercambio,
-                // Cargamos todo para que Angular actualice la UI sin recargar página
-                'data'        => $asignacionOrigen->load(['usuario.persona', 'turno', 'semana'])
-            ]);
+            return response()->json(['status' => 'success', 'message' => $mensaje]);
         });
-
     } catch (\Exception $e) {
+        // Esto te dirá exactamente qué falló en la consola si vuelve a dar error
         return response()->json([
-            'status'  => 'error', 
-            'message' => 'Error en el servidor: ' . $e->getMessage()
+            'status' => 'error', 
+            // Usamos $e->getLine() para saber dónde falló exactamente
+            'message' => 'Error en línea ' . $e->getLine() . ': ' . $e->getMessage() 
         ], 500);
     }
 }
 
-/**
- * MODIFICAR UN TURNO ESPECÍFICO
- * Permite cambiar el tipo de turno o la observación de una asignación ya existente.
- */
+
+// Función auxiliar para no romper el calendario
+private function obtenerSemanaIdPorFecha($fecha) {
+    return DB::table('semanas')
+        ->where('fecha_inicio', '<=', $fecha)
+        ->where('fecha_fin', '>=', $fecha)
+        ->value('id');
+}
+
 public function update(Request $request, $id)
 {
     try {
