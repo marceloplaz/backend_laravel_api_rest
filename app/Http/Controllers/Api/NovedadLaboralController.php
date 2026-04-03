@@ -15,63 +15,72 @@ class NovedadLaboralController extends Controller
      * Procesa el intercambio de turnos por motivos administrativos (Baja, Permiso, etc.)
      */
     public function permutarConNovedad(Request $request)
-    {
-        $request->validate([
-            'id_origen'    => 'required|exists:turnos_asignados,id',
-            'id_destino'   => 'required|exists:turnos_asignados,id',
-            'tipo_novedad' => 'required|in:permiso,baja_medica,vacacion,licencia,devolucion_turno',
-            'observacion'  => 'nullable|string'
-        ]);
+{
+    $request->validate([
+        'id_origen'    => 'required|exists:turnos_asignados,id',
+        'id_destino'   => 'nullable|exists:turnos_asignados,id', // Puede ser opcional
+        'usuario_reemplazo_id' => 'required_if:id_destino,null|exists:users,id',
+        'tipo_novedad' => 'required|in:permiso,baja_medica,vacacion,licencia,devolucion_turno',
+        'observacion'  => 'nullable|string'
+    ]);
 
-        try {
-            return DB::transaction(function () use ($request) {
-                // 1. Cargar los turnos con sus relaciones para las observaciones
-                $turnoA = TurnoAsignado::with('usuario.persona')->findOrFail($request->id_origen);
+    try {
+        return DB::transaction(function () use ($request) {
+            $turnoA = TurnoAsignado::with('usuario.persona')->findOrFail($request->id_origen);
+            
+            // Datos para el historial
+            $fechaOriginalA = $turnoA->fecha;
+            $usuarioA = $turnoA->usuario_id;
+            $nombreA = $turnoA->usuario->persona->nombre_completo ?? 'Personal A';
+
+            if ($request->filled('id_destino')) {
+                // CASO A: INTERCAMBIO (SWAP)
                 $turnoB = TurnoAsignado::with('usuario.persona')->findOrFail($request->id_destino);
-
-                // Datos temporales para el SWAP (Intercambio)
-                $fechaA = $turnoA->fecha;
-                $semanaA = $turnoA->semana_id;
-                $nombreA = $turnoA->usuario->persona->nombre_completo ?? 'Personal A';
                 $nombreB = $turnoB->usuario->persona->nombre_completo ?? 'Personal B';
 
-                // 2. EJECUTAR EL INTERCAMBIO FÍSICO EN LA BD
-                // El turno A se "muda" a la fecha y semana del turno B
+                // Intercambio de datos
+                $fechaB = $turnoB->fecha;
+                $semanaB = $turnoB->semana_id;
+
                 $turnoA->update([
-                    'fecha'       => $turnoB->fecha,
-                    'semana_id'   => $turnoB->semana_id,
-                    'estado'      => $request->tipo_novedad,
-                    'observacion' => "Movido por {$request->tipo_novedad}. Estaba el {$fechaA}"
+                    'fecha' => $fechaB,
+                    'semana_id' => $semanaB,
+                    'estado' => $request->tipo_novedad
                 ]);
 
-                // El turno B se "muda" a la fecha y semana original de A
                 $turnoB->update([
-                    'fecha'       => $fechaA,
-                    'semana_id'   => $semanaA,
-                    'observacion' => "Intercambio por novedad con {$nombreA}"
+                    'fecha' => $fechaOriginalA,
+                    'semana_id' => $turnoA->semana_id
                 ]);
 
-                // 3. REGISTRAR EL HISTORIAL EN LA NUEVA TABLA
-                NovedadLaboral::create([
-                    'asignacion_id'          => $turnoA->id,
-                    'tipo_novedad'           => $request->tipo_novedad,
-                    'usuario_solicitante_id' => $turnoA->usuario_id,
-                    'usuario_reemplazo_id'   => $turnoB->usuario_id,
-                    'fecha_original'         => $fechaA,
-                    'fecha_nueva'            => $turnoB->fecha,
-                    'observacion_detalle'    => $request->observacion ?? "Permuta: {$nombreA} <-> {$nombreB}"
+                $reemplazoId = $turnoB->usuario_id;
+                $msg = "Intercambio realizado entre {$nombreA} y {$nombreB}.";
+            } else {
+                // CASO B: REASIGNACIÓN SIMPLE (Baja/Permiso sin intercambio)
+                $turnoA->update([
+                    'usuario_id' => $request->usuario_reemplazo_id,
+                    'estado' => $request->tipo_novedad
                 ]);
+                
+                $reemplazoId = $request->usuario_reemplazo_id;
+                $msg = "Turno reasignado exitosamente.";
+            }
 
-                return response()->json([
-                    'status'  => 'success',
-                    'message' => 'Desplazamiento físico y novedad registrados correctamente.'
-                ]);
-            });
-        } catch (\Exception $e) {
-            return response()->json([
-                'status'  => 'error',
-                'message' => 'Error en el servidor: ' . $e->getMessage()
-            ], 500);
-        }
+            // 3. REGISTRAR EN TABLA DE NOVEDADES
+            NovedadLaboral::create([
+                'asignacion_id'          => $turnoA->id,
+                'tipo_novedad'           => $request->tipo_novedad,
+                'usuario_solicitante_id' => $usuarioA,
+                'usuario_reemplazo_id'   => $reemplazoId,
+                'fecha_original'         => $fechaOriginalA,
+                'fecha_nueva'            => $turnoA->fecha,
+                'observacion_detalle'    => $request->observacion ?? $msg
+            ]);
+
+            return response()->json(['status' => 'success', 'message' => $msg]);
+        });
+    } catch (\Exception $e) {
+        return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
     }
+}
 }

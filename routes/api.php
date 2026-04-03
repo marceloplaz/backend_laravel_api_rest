@@ -13,7 +13,7 @@ use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\TurnoAsignadoController;
 use App\Http\Controllers\Api\CategoriaController;
 use App\Http\Controllers\Api\IncidenciaController;
-
+use App\Http\Controllers\Api\NovedadLaboralController;
 Route::prefix("v1")->group(function () {
 
     // 🔓 RUTAS ABIERTAS (Mínimo acceso posible)
@@ -38,6 +38,25 @@ Route::prefix("v1")->group(function () {
         Route::get("/equipo-filtrado", [TurnoAsignadoController::class, "getEquipoFiltrado"]);
         Route::get("/lista-turnos-disponibles", [TurnoController::class, "index"]);
 
+        
+        // --- 📝 GESTIÓN DE NOVEDADES LABORALES ---
+    Route::prefix('novedades')->group(function () {
+        // Rutas de lectura (Cualquier usuario autenticado)
+        Route::get('/', [NovedadLaboralController::class, 'index']);
+        Route::get('/{id}', [NovedadLaboralController::class, 'show']);
+
+        // 🔒 Rutas de escritura (Solo quienes gestionan el personal)
+        Route::middleware('jugadordeunbit:asignar_turnos')->group(function () {
+            Route::post('/registrar', [NovedadLaboralController::class, 'store']);
+            Route::post('/permutar-turnos', [NovedadLaboralController::class, 'permutarConNovedad']);
+        });
+    });
+
+    // --- 👥 LÓGICA DE ASIGNACIÓN A PERSONAL ---
+    Route::prefix('turnos-asignados')->group(function () {
+        // ... tus rutas actuales de turnos
+    });
+        
         // --- 🏗️ ADMINISTRACIÓN DE SISTEMA ---
         Route::middleware('jugadordeunbit:admin_system')->group(function () {
             Route::apiResource('persona', PersonaController::class);
@@ -64,6 +83,8 @@ Route::prefix("v1")->group(function () {
         Route::put('incidencias/{id}/resolver', [IncidenciaController::class, 'resolver'])
             ->middleware('jugadordeunbit:resolver_incidencia');
 
+
+
         // --- 📅 CONFIGURACIÓN DE CALENDARIO ---
         Route::get('/calendario/configuracion', function () {
             return [
@@ -82,14 +103,7 @@ Route::prefix("v1")->group(function () {
                 Route::delete('/{turnoId}', [ServicioTurnoController::class, 'quitar']);
             });
         
-        Route::prefix('novedades')->group(function () {
-        Route::get('/', [NovedadLaboralController::class, 'index']); 
-        Route::post('/registrar', [NovedadLaboralController::class, 'store']); 
-        Route::get('/{id}', [NovedadLaboralController::class, 'show']);
         
-        // Esta es la que usaremos para el intercambio físico de fechas
-        Route::post('/permutar-turnos', [NovedadLaboralController::class, 'permutarConNovedad']);
-    });
 
 
    
