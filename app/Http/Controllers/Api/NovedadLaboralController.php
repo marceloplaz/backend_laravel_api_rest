@@ -11,9 +11,18 @@ use Carbon\Carbon;
 
 class NovedadLaboralController extends Controller
 {
-    /**
-     * Procesa el intercambio de turnos por motivos administrativos (Baja, Permiso, etc.)
-     */
+    
+public function index()
+{
+    return NovedadLaboral::with([
+        'solicitante.persona', 
+        'reemplazo.persona',
+        'asignacion.servicio', // Trae el servicio del turno original
+        'asignacion.turno'     // Trae el nombre del turno (Mañana/Tarde)
+    ])->orderBy('created_at', 'desc')->get();
+}     
+
+
     public function permutarConNovedad(Request $request)
 {
     $request->validate([
@@ -82,5 +91,56 @@ class NovedadLaboralController extends Controller
     } catch (\Exception $e) {
         return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
     }
+}
+public function store(Request $request)
+{
+    $request->validate([
+        'id_origen' => 'required|exists:asignaciones,id',
+        'usuario_reemplazo_id' => 'required|exists:usuarios,id',
+        'tipo_novedad' => 'required|string',
+        'observacion' => 'nullable|string|max:250',
+        'con_devolucion' => 'nullable|integer' // Recibimos 0 o 1 desde Angular
+    ]);
+
+    try {
+        DB::beginTransaction();
+
+        // 1. Creamos el registro en la tabla novedades_laborales
+        $novedad = NovedadLaboral::create([
+            'asignacion_id' => $request->id_origen,
+            'tipo_novedad' => $request->tipo_novedad,
+            'usuario_solicitante_id' => auth()->id(), // El usuario que está logueado
+            'usuario_reemplazo_id' => $request->usuario_reemplazo_id,
+            'fecha_original' => DB::table('asignaciones')->where('id', $request->id_origen)->value('fecha'),
+            'con_devolucion' => $request->con_devolucion ?? 0,
+            'observacion_detalle' => $request->observacion,
+        ]);
+
+        // 2. Opcional: Actualizar el estado del turno original
+        // DB::table('asignaciones')->where('id', $request->id_origen)->update(['estado' => 'cubierto_por_novedad']);
+
+        DB::commit();
+        return response()->json(['message' => 'Novedad registrada correctamente', 'data' => $novedad], 201);
+
+    } catch (\Exception $e) {
+        DB::rollBack();
+        return response()->json(['error' => 'Error al registrar: ' . $e->getMessage()], 500);
+    }
+}
+public function show($id)
+{
+    // Buscamos la novedad con TODAS sus relaciones
+    $novedad = NovedadLaboral::with([
+        'solicitante.persona', 
+        'reemplazo.persona', 
+        'asignacion.servicio', 
+        'asignacion.turno'
+    ])->find($id);
+
+    if (!$novedad) {
+        return response()->json(['message' => 'Novedad no encontrada'], 404);
+    }
+
+    return response()->json($novedad);
 }
 }

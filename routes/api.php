@@ -50,6 +50,7 @@ Route::prefix("v1")->group(function () {
             Route::post('/registrar', [NovedadLaboralController::class, 'store']);
             Route::post('/permutar-turnos', [NovedadLaboralController::class, 'permutarConNovedad']);
         });
+        Route::get('/{id}', [NovedadLaboralController::class, 'show']);
     });
 
     // --- 👥 LÓGICA DE ASIGNACIÓN A PERSONAL ---
