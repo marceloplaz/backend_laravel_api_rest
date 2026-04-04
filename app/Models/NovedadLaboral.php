@@ -21,6 +21,7 @@ class NovedadLaboral extends Model
         'fecha_nueva',
         'con_devolucion',
         'documento_respaldo',
+        'con_devolucion',
         'observacion_detalle'
     ];
 

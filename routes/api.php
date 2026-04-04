@@ -49,6 +49,7 @@ Route::prefix("v1")->group(function () {
         Route::middleware('jugadordeunbit:asignar_turnos')->group(function () {
             Route::post('/registrar', [NovedadLaboralController::class, 'store']);
             Route::post('/permutar-turnos', [NovedadLaboralController::class, 'permutarConNovedad']);
+            Route::put('/{id}/devolver', [NovedadLaboralController::class, 'marcarDevolucion']);
         });
         Route::get('/{id}', [NovedadLaboralController::class, 'show']);
     });

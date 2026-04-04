@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
 
+
 class NovedadLaboralController extends Controller
 {
     
@@ -83,6 +84,7 @@ public function index()
                 'usuario_reemplazo_id'   => $reemplazoId,
                 'fecha_original'         => $fechaOriginalA,
                 'fecha_nueva'            => $turnoA->fecha,
+                'con_devolucion'         => $request->tipo_novedad === 'devolucion_turno' ? 1 : 0, 
                 'observacion_detalle'    => $request->observacion ?? $msg
             ]);
 
@@ -92,6 +94,32 @@ public function index()
         return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
     }
 }
+
+public function marcarDevolucion($id)
+{
+    try {
+        // Buscamos usando el nombre real de tu modelo: NovedadLaboral
+        $novedad = NovedadLaboral::findOrFail($id);
+        
+        // Actualizamos el campo con_devolucion a 1 (true)
+        $novedad->update([
+            'con_devolucion' => 1
+        ]);
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Turno devuelto con éxito',
+            'data' => $novedad
+        ], 200);
+
+    } catch (\Exception $e) {
+        return response()->json([
+            'status' => false,
+            'message' => 'No se pudo procesar la devolución: ' . $e->getMessage()
+        ], 500);
+    }
+}
+
 public function store(Request $request)
 {
     $request->validate([
@@ -143,4 +171,5 @@ public function show($id)
 
     return response()->json($novedad);
 }
+
 }
