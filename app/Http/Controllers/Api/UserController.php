@@ -14,11 +14,23 @@ class UserController extends Controller
     /**
      * Muestra una lista de usuarios con sus turnos y categorías.
      */
-   public function index()
+public function index(Request $request)
 {
-    // Quitamos 'turnos' por un momento para que la API no explote
-    $users = User::with(['categoria', 'persona'])->get();
-    return response()->json($users);
+    $buscar = $request->query('buscar');
+
+    $users = User::with(['categoria', 'persona'])
+        ->when($buscar, function ($query, $buscar) {
+            // Buscamos en el nombre de usuario o en el nombre completo de la tabla personas
+            return $query->where('name', 'like', "%{$buscar}%")
+                         ->orWhereHas('persona', function ($q) use ($buscar) {
+                             $q->where('nombre_completo', 'like', "%{$buscar}%");
+                         });
+        })
+        ->get();
+
+    return response()->json([
+        'data' => $users
+    ], 200);
 }
 
 public function store(Request $request)

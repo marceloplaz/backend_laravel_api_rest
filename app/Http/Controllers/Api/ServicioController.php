@@ -6,7 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\Servicio;
 use App\Http\Requests\ServicioStoreRequest;
 use App\Http\Requests\ServicioUpdateRequest;
-
+use App\Http\Resources\UsuarioServicioResource;
+use App\Http\Resources\ServicioResource;
 class ServicioController extends Controller
 {
     // LISTAR
@@ -27,16 +28,15 @@ class ServicioController extends Controller
             'data' => $servicio
         ], 201);
     }
-
-    // MOSTRAR
-    public function show($id)
-    {
-        $servicio = Servicio::with('turnos')->findOrFail($id);
-
-        return response()->json([
-            'data' => $servicio
-        ], 200);
-    }
+public function show($id)
+{
+    // CAMBIO CLAVE: Solo carga 'usuarios'. 
+    // Como la relación en Servicio.php apunta a User::class, 
+    // cada objeto en esa colección YA ES un usuario.
+    $servicio = Servicio::with('usuarios')->findOrFail($id);
+    
+    return new ServicioResource($servicio);
+}
 
     // ACTUALIZAR
     public function update(ServicioUpdateRequest $Request, $id)

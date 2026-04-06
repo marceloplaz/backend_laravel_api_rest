@@ -10,25 +10,21 @@ use App\Http\Resources\UsuarioServicioCollection;
 
 class UsuarioServicioController extends Controller
 {
-    public function index(Request $request)
-{
-    $query = UsuarioServicio::with(['usuario', 'servicio']);
+ // App\Http\Controllers\Api\UsuarioServicioController.php
 
-    if ($request->has('usuario_id')) {
-        $query->where('usuario_id', $request->usuario_id);
-    }
+ public function index(Request $request)
+{
+    // Es vital cargar 'usuario.persona' para obtener el nombre real
+    $query = UsuarioServicio::with(['usuario.persona', 'servicio']);
 
     if ($request->has('servicio_id')) {
         $query->where('servicio_id', $request->servicio_id);
     }
 
-    $usuarioServicios = $query->paginate(10);
+    $usuarioServicios = $query->get(); // O paginate(10)
 
-    // En lugar de llamar a la Collection que falla, usamos el Resource 
-    // con el método estático 'collection' que ya trae Laravel por defecto.
     return UsuarioServicioResource::collection($usuarioServicios);
 }
-
     public function store(Request $request)
     {
         $validated = $request->validate([
