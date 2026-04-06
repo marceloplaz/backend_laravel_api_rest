@@ -84,7 +84,7 @@ public function index()
                 'usuario_reemplazo_id'   => $reemplazoId,
                 'fecha_original'         => $fechaOriginalA,
                 'fecha_nueva'            => $turnoA->fecha,
-                'con_devolucion'         => $request->tipo_novedad === 'devolucion_turno' ? 1 : 0, 
+                'con_devolucion'         => 0,
                 'observacion_detalle'    => $request->observacion ?? $msg
             ]);
 
@@ -94,29 +94,21 @@ public function index()
         return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
     }
 }
-
 public function marcarDevolucion($id)
 {
     try {
-        // Buscamos usando el nombre real de tu modelo: NovedadLaboral
         $novedad = NovedadLaboral::findOrFail($id);
         
-        // Actualizamos el campo con_devolucion a 1 (true)
-        $novedad->update([
-            'con_devolucion' => 1
-        ]);
+        // Cambio manual y guardado directo
+        $novedad->con_devolucion = 1; 
+        $novedad->save(); 
 
         return response()->json([
-            'status' => true,
-            'message' => 'Turno devuelto con éxito',
-            'data' => $novedad
+            'status' => 'success',
+            'message' => 'Turno devuelto con éxito'
         ], 200);
-
     } catch (\Exception $e) {
-        return response()->json([
-            'status' => false,
-            'message' => 'No se pudo procesar la devolución: ' . $e->getMessage()
-        ], 500);
+        return response()->json(['message' => $e->getMessage()], 500);
     }
 }
 
