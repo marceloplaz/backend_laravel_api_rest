@@ -88,16 +88,21 @@ class PersonaController extends Controller
         }
     }
 
-    public function show(Request $request)
-    {
-        // Cargamos la relación 'user' para que el Resource tenga toda la info
-        $persona = $request->user()->load('persona')->persona;
-        
-        if (!$persona) {
-            return response()->json(["message" => "No tienes datos registrados"], 404);
-        }
-        return new PersonaResource($persona);
+    public function show($id)
+{
+    // Buscamos la persona y cargamos su usuario (email, name)
+    $persona = Persona::with('user')->find($id);
+
+    if (!$persona) {
+        return response()->json(['message' => 'No encontrado'], 404);
     }
+
+    // Retornamos el objeto para que Angular lo reciba en 'res.data'
+    return response()->json([
+        'status' => 'success',
+        'data' => $persona
+    ]);
+}
 
     public function update(Request $request, $id)
     {

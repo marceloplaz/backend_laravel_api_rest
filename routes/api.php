@@ -21,14 +21,15 @@ Route::prefix("v1")->group(function () {
     // 🔓 RUTAS PÚBLICAS
     Route::post("/auth/login", [AuthController::class, "funLogin"])->middleware('throttle:5,1');
     Route::post("/auth/register", [AuthController::class, "funRegister"]);
-
+    
     // 🔒 RUTAS PROTEGIDAS (Token Sanctum)
     Route::middleware('auth:sanctum')->group(function () {
 
         // --- Perfil y Sesión ---
         Route::get("/auth/profile", [AuthController::class, "funprofile"]);
         Route::post("/auth/logout", [AuthController::class, "funlogout"]);
-
+        Route::get('persona/{id}', [PersonaController::class, 'show']);
+        
         // --- Consultas Base del Dashboard (Accesibles para todos los logueados) ---
         Route::get("/roles", [UserController::class, "getRoles"]);
         Route::get("/categorias-lista", [TurnoAsignadoController::class, "listaCategorias"]);
@@ -41,7 +42,7 @@ Route::prefix("v1")->group(function () {
         // =========================================================
         Route::middleware('jugadordeunbit:gestionar_servicios')->group(function () {
             
-       Route::get('servicios/{id}', [ServicioController::class, 'show']);
+            Route::get('servicios/{id}', [ServicioController::class, 'show']);
         // Gestión de la Nómina (Tabla de la derecha y Asignación)
             Route::apiResource('usuario-servicio', UsuarioServicioController::class);
             
@@ -113,6 +114,7 @@ Route::prefix("v1")->group(function () {
             
             // Seguridad y Password
             Route::put('/usuarios/{id}/password', [UserController::class, 'updatePassword']);
+           
             Route::post("/auth/update-initial-password", [AuthController::class, "updateFirstPassword"]);
             Route::post('/auth/generate-action-token', [AuthController::class, 'generateToken']);
         });
