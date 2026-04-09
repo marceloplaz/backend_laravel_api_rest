@@ -29,6 +29,7 @@ Route::prefix("v1")->group(function () {
         Route::get("/auth/profile", [AuthController::class, "funprofile"]);
         Route::post("/auth/logout", [AuthController::class, "funlogout"]);
         Route::get('persona/{id}', [PersonaController::class, 'show']);
+       
         
         // --- Consultas Base del Dashboard (Accesibles para todos los logueados) ---
         Route::get("/roles", [UserController::class, "getRoles"]);
@@ -105,6 +106,7 @@ Route::prefix("v1")->group(function () {
         // =========================================================
         // 🏗️ ADMINISTRACIÓN DE SISTEMA (Solo para jugadordeunbit:admin_system)
         // =========================================================
+        Route::get('personal/exportar-pdf', [PersonaController::class, 'exportarPdf']);
         Route::middleware('jugadordeunbit:admin_system')->group(function () {
             Route::apiResource('persona', PersonaController::class);
             Route::apiResource('usuarios', UserController::class);

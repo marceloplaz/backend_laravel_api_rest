@@ -8,24 +8,29 @@ use App\Http\Resources\PersonaResource;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class PersonaController extends Controller 
 {
     public function index(Request $request)
     {
         $query = Persona::with('user'); 
-
+        // if de filtro de busqueda
         if ($request->has('buscar')) {
             $buscar = $request->get('buscar');
             $query->where('nombre_completo', 'like', "%$buscar%")
                   ->orWhere('carnet_identidad', 'like', "%$buscar%");
         }
-
+    
         if ($request->has('cargo')) {
             $query->where('tipo_trabajador', $request->get('cargo'));
         }
+        
+        // paginador de 5 
+        $perPage = $request->get('per_page', 5);
 
-        return PersonaResource::collection($query->paginate(10));
+
+        return PersonaResource::collection($query->paginate($perPage));
     }
 
     public function store(Request $request)
@@ -44,7 +49,7 @@ class PersonaController extends Controller
             "persona.carnet_identidad"    => "required|unique:personas,carnet_identidad",
             "persona.fecha_nacimiento"    => "required|date",
             "persona.genero"              => "required|string|max:1",
-            "persona.telefono"            => "required|string", // ¡CRÍTICO!
+            "persona.telefono"            => "required|string", 
             "persona.direccion"           => "required|string",
             "persona.nacionalidad"        => "required|string",
             "persona.tipo_trabajador"     => "required|string", 
@@ -143,5 +148,17 @@ class PersonaController extends Controller
         } catch (\Exception $e) {
             return response()->json(["message" => "Error al eliminar", "error" => $e->getMessage()], 500);
         }
+    }
+
+    public function exportarPdf()
+    {
+        // Traemos todos los datos de la tabla personas
+        $personal = Persona::all();
+
+        // Cargamos la vista usando la ruta de puntos: carpeta.archivo
+        $pdf = Pdf::loadView('pdf.reporte_personal', compact('personal'));
+
+        // Retornamos el archivo para que Angular lo reciba
+        return $pdf->download('reporte_personal.pdf');
     }
 }
