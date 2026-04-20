@@ -15,6 +15,7 @@ class TurnoAsignado extends Model
         'usuario_id',
         'servicio_id',
         'turno_id',
+        'area_id',
         'semana_id',
         'mes_id',
         'gestion_id',
@@ -63,4 +64,8 @@ class TurnoAsignado extends Model
     {
     return $this->hasOne(NovedadLaboral::class, 'asignacion_id');
     }
+    public function area()
+{
+    return $this->belongsTo(Area::class, 'area_id');
+}
 }

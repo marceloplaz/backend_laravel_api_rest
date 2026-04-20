@@ -10,11 +10,13 @@ use App\Models\User;
 class Servicio extends Model
 {
     use HasFactory;
-
+    protected $table = 'servicios';
     protected $fillable = [
-        'nombre'
-    ];
-
+        'nombre', 
+        'descripcion', 
+        'cantidad_pacientes'
+    ]; 
+    
     // USAR SOLO ESTA VERSIÓN DE USUARIOS
     public function usuarios()
     {

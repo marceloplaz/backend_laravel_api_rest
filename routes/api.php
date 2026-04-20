@@ -44,12 +44,14 @@ Route::prefix("v1")->group(function () {
         Route::middleware('jugadordeunbit:gestionar_servicios')->group(function () {
             
             Route::get('servicios/{id}', [ServicioController::class, 'show']);
-        // Gestión de la Nómina (Tabla de la derecha y Asignación)
+            Route::apiResource('servicios', ServicioController::class);//habilita los metodos get,post,delete,put 
+
+            Route::get('areas', [ServicioController::class, 'getAreas']);
+            // Gestión de la Nómina (Tabla de la derecha y Asignación)
             Route::apiResource('usuario-servicio', UsuarioServicioController::class);
-            
+
             // Buscador de Profesionales (Para el input de la izquierda)
-            // IMPORTANTE: En Angular usa -> api/v1/buscar-profesionales
-            Route::get('buscar-profesionales', [UserController::class, 'index']); 
+             Route::get('buscar-profesionales', [UserController::class, 'index']); 
 
             // Configuración de turnos por servicio
             Route::prefix('servicios/{servicioId}/turnos')->group(function () {
@@ -65,7 +67,8 @@ Route::prefix("v1")->group(function () {
         Route::middleware('jugadordeunbit:asignar_turnos')->group(function () {
             
             Route::prefix('turnos-asignados')->group(function () {
-                Route::post('/', [TurnoAsignadoController::class, 'store']);
+            
+            Route::post('/', [TurnoAsignadoController::class, 'store']);
                 Route::post('intercambiar', [TurnoAsignadoController::class, 'intercambiarTurno']);
                 Route::post('replicar-mes', [TurnoAsignadoController::class, 'replicarMes']);
                 Route::post('/vaciar-mes', [TurnoAsignadoController::class, 'vaciarMes']);
@@ -73,6 +76,7 @@ Route::prefix("v1")->group(function () {
                 Route::post('actualizar', [TurnoAsignadoController::class, 'actualizarPosicion']);
                 Route::put('{id}', [TurnoAsignadoController::class, 'update']);
                 Route::delete('{id}', [TurnoAsignadoController::class, 'destroy']);
+                
             });
 
             Route::prefix('novedades')->group(function () {
@@ -86,6 +90,7 @@ Route::prefix("v1")->group(function () {
         // =========================================================
         // 📊 REPORTES Y VISUALIZACIÓN (Permisos específicos)
         // =========================================================
+        Route::get('turnos/resumen-mensual', [TurnoAsignadoController::class, 'getResumenMensual']);
         Route::get('reporte-semanal/{semana_id}/{usuario_id?}', [TurnoAsignadoController::class, 'reporteHorasSemana']);
         
         Route::get('/servicio/{servicioId}/equipo', [TurnoAsignadoController::class, 'verTurnosPorJerarquia'])

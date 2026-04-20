@@ -12,7 +12,8 @@ class UserAdminSeeder extends Seeder
     public function run(): void
     {
         DB::transaction(function () {
-            // 1. Crear primero el Usuario
+            // 1. Crear o actualizar el Usuario
+            // Buscamos por email para evitar duplicados de cuenta
             $user = User::updateOrCreate(
                 ['email' => 'jugadordeunbit@gmail.com'],
                 [
@@ -22,13 +23,12 @@ class UserAdminSeeder extends Seeder
                 ]
             );
 
-            // 2. Crear la Persona vinculada al Usuario (según tu tabla)
-            // Usamos DB::table para evitar errores si el modelo Persona no está actualizado
+            // 2. Crear o actualizar la Persona vinculada al Usuario
+            // IMPORTANTE: Buscamos por el carnet real para que no intente duplicarlo
             DB::table('personas')->updateOrInsert(
-                ['carnet_identidad' => '1234567'],
+                ['carnet_identidad' => '5049801'], // Clave de búsqueda correcta
                 [
                     'nombre_completo'    => 'EDSON MARCELO PLAZA BARRIOS',
-                    'carnet_identidad'   => '5049801',
                     'fecha_nacimiento'   => '1982-05-28',
                     'genero'             => 'M',
                     'telefono'           => '68691672',
@@ -37,13 +37,12 @@ class UserAdminSeeder extends Seeder
                     'nacionalidad'       => 'Boliviana',
                     'tipo_salario'       => 'TGN',
                     'numero_tipo_salario'=> '9618',
-                    'user_id'            => $user->id, // Vinculación correcta
-                    'created_at'         => now(),
+                    'user_id'            => $user->id,
                     'updated_at'         => now(),
                 ]
             );
 
-            // 3. Asignar el Rol de Super Admin
+            // 3. Asignar el Rol (Asumiendo que el ID 1 es el Admin)
             $user->roles()->sync([1]);
         });
     }

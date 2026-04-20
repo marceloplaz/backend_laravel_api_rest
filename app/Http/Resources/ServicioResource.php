@@ -17,6 +17,8 @@ class ServicioResource extends JsonResource
     return [
         'id'     => $this->id,
         'nombre' => $this->nombre,
+        'descripcion'        => $this->descripcion, 
+        'cantidad_pacientes' => $this->cantidad_pacientes, 
         'usuarios' => $this->usuarios->map(function($user) {
             return [
                 'id'             => $user->pivot->id, // ID de la tabla usuario_servicios

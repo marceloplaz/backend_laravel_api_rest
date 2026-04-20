@@ -13,6 +13,8 @@ class UserResource extends JsonResource
         "id" => $this->id,
         "nombre_usuario" => $this->name,
         "email" => $this->email,
+        // primer rol asignado
+        "rol_nombre" => $this->roles->first()?->name ?? 'Personal Autorizado',
         // Cargamos los datos personales si existen
         "detalles_personales" => new PersonaResource($this->persona)
     ];

@@ -19,60 +19,76 @@ class TurnoAsignadoController extends Controller
      */
 public function store(Request $request)
 {
-    $userAutenticado = auth()->user();
-
     $request->validate([
-        'usuario_id'  => 'required|exists:users,id',
-        'turno_id'    => 'required|exists:turnos,id',
-        'fecha'       => 'required|date',
-        'observacion' => 'nullable|string|max:500'
+        'usuario_id'       => 'required|exists:users,id',
+        'turno_id'         => 'required|exists:turnos,id',
+        'area_id'          => 'nullable|exists:areas,id',
+        'fecha'            => 'nullable|date',
+        'fechas_multiples' => 'nullable|array',
+        'observacion'      => 'nullable|string|max:500'
     ]);
 
-    $fechaFormateada = Carbon::parse($request->fecha)->format('Y-m-d');
-
-    // 1. OBTENER EL SERVICIO AUTOMÁTICAMENTE
+    // Obtener servicio activo
     $asignacionServicio = \App\Models\UsuarioServicio::where('usuario_id', $request->usuario_id)
         ->where('estado', true)
         ->first();
 
     if (!$asignacionServicio) {
-        return response()->json([
-            'message' => 'El usuario no tiene un servicio activo asignado.'
-        ], 422);
+        return response()->json(['message' => 'El usuario no tiene un servicio activo.'], 422);
     }
 
-    $servicioId = $asignacionServicio->servicio_id;
+    // Limpiamos fechas (por si llega un array vacío)
+    $fechasAProcesar = $request->fechas_multiples ?? ($request->fecha ? [$request->fecha] : []);
 
-    $semana = Semana::where('fecha_inicio', '<=', $fechaFormateada)
-        ->where('fecha_fin', '>=', $fechaFormateada)
-        ->with('mes.gestion')
-        ->first();
-
-    if (!$semana) {
-        return response()->json(['message' => 'La fecha no existe en el calendario.'], 422);
+    if (empty($fechasAProcesar)) {
+        return response()->json(['message' => 'No se han seleccionado fechas para asignar.'], 400);
     }
 
-    // 3. VALIDACIÓN DE CHOQUE (Opcional: déjala si no quieres que una persona tenga 2 turnos a la misma hora)
-    // ... (código de choque de horarios) ...
+    try {
+        \DB::transaction(function () use ($request, $fechasAProcesar, $asignacionServicio) {
+            foreach ($fechasAProcesar as $fecha) {
+                $fechaFormateada = Carbon::parse($fecha)->format('Y-m-d');
 
-    // 4. CREAR LA ASIGNACIÓN
-    $asignacion = TurnoAsignado::create([
-        'usuario_id'  => $request->usuario_id,
-        'servicio_id' => $servicioId,
-        'turno_id'    => $request->turno_id,
-        'semana_id'   => $semana->id,
-        'mes_id'      => $semana->mes_id,
-        'gestion_id'  => $semana->mes->gestion_id,
-        'fecha'       => $fechaFormateada,
-        'estado'      => 'programado',
-        'observacion' => $request->observacion
-    ]);
+               $semana = \App\Models\Semana::where('fecha_inicio', '<=', $fechaFormateada)
+                    ->where('fecha_fin', '>=', $fechaFormateada)
+                    ->with('mes') // Cargamos el mes para evitar N+1
+                    ->first();
 
-    return response()->json([
-        'message' => 'Turno asignado correctamente', 
-        'data' => $asignacion->load(['usuario.persona', 'turno'])
-    ], 201);
+                if (!$semana) continue;
+
+                // Usamos updateOrCreate para evitar duplicados en la misma fecha
+                TurnoAsignado::updateOrCreate(
+                    [
+                        'usuario_id' => $request->usuario_id,
+                        'fecha'      => $fechaFormateada
+                    ],
+                    [
+                        'servicio_id' => $asignacionServicio->servicio_id,
+                        'area_id'     => $request->area_id,
+                        'turno_id'    => $request->turno_id,
+                        'semana_id'   => $semana->id,
+                        'mes_id'      => $semana->mes_id,
+                        'gestion_id'  => $semana->mes->gestion_id,
+                        'estado'      => 'programado',
+                        'observacion' => $request->observacion
+                    ]
+                );
+            }
+        });
+
+        return response()->json(['message' => 'Turnos procesados correctamente'], 201);
+
+    } catch (\Exception $e) {
+        return response()->json(['message' => 'Error al guardar: ' . $e->getMessage()], 500);
+    }
 }
+
+
+
+
+
+
+
 public function getEquipoPorJerarquia($servicio_id)
 {
     // 1. Buscamos los usuarios vinculados a este servicio
@@ -274,23 +290,19 @@ public function getEquipoFiltrado(Request $request)
         $categoria_id = $request->query('categoria_id');
         $semana_id = $request->query('semana_id');
 
-        // 1. Consulta base de usuarios en el servicio
         $query = \App\Models\User::whereHas('servicios', function($q) use ($servicio_id) {
             $q->where('servicios.id', $servicio_id);
         });
 
-        // 2. FILTRO SEGURO: Solo filtramos si categoria_id es un número
-        // Esto evita el Error 500 cuando llega "Todas" o "Médicos" como string
         if ($categoria_id && is_numeric($categoria_id)) {
             $query->where('categoria_id', $categoria_id);
         }
 
-        // 3. Carga de datos y turnos de la semana
+        // --- CAMBIO AQUÍ: Agregamos 'area' en el with() ---
         $equipo = $query->with(['persona', 'categoria', 'turnosAsignados' => function($q) use ($semana_id) {
-            $q->where('semana_id', $semana_id)->with('turno');
+            $q->where('semana_id', $semana_id)->with(['turno', 'area']); 
         }])->get();
 
-        // 4. Mapeo para el formato que espera tu Angular
         $resultado = $equipo->map(function($user) {
             return [
                 'usuario_id'       => $user->id,
@@ -302,9 +314,11 @@ public function getEquipoFiltrado(Request $request)
                         'nombre_turno'  => $ta->turno->nombre_turno,
                         'horario'       => $ta->turno->hora_inicio . ' - ' . $ta->turno->hora_fin,
                         'fecha'         => $ta->fecha,
-                        'color'         => $ta->turno->color ?? '#52600c'
+                        'color'         => $ta->turno->color ?? '#52600c',
+                        'area_nombre'   => $ta->area ? $ta->area->nombre : null
+                        
                     ];
-                })       
+                })        
             ];
         });
 
@@ -314,10 +328,7 @@ public function getEquipoFiltrado(Request $request)
         ], 200);
 
     } catch (\Exception $e) {
-        return response()->json([
-            'status' => 'error',
-            'message' => 'Error: ' . $e->getMessage()
-        ], 500);
+        return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
     }
 }
 // Agrega esto al final de tu TurnoAsignadoController
@@ -599,6 +610,7 @@ public function update(Request $request, $id)
     try {
         $request->validate([
             'turno_id'    => 'required|exists:turnos,id',
+            'area_id'     => 'nullable|exists:areas,id',
             'observacion' => 'nullable|string|max:500',
             'estado'      => 'nullable|string'
         ]);
@@ -607,6 +619,7 @@ public function update(Request $request, $id)
 
         $asignacion->update([
             'turno_id'    => $request->turno_id,
+            'area_id'     => $request->area_id,
             'observacion' => $request->observacion ?? $asignacion->observacion,
             'estado'      => $request->estado ?? $asignacion->estado,
         ]);
@@ -642,5 +655,59 @@ public function destroy($id)
         return response()->json(['error' => $e->getMessage()], 500);
     }
 }
+
+// Devuelve el total de horas y días trabajados por cada persona en un servicio y mes específico.
+ 
+public function getResumenMensual(Request $request)
+{
+    $servicio_id = $request->query('servicio_id');
+    $mes_id = $request->query('mes_id');
+
+    if (!$servicio_id || !$mes_id) {
+        return response()->json(['message' => 'Faltan parámetros: servicio_id y mes_id'], 422);
+    }
+
+    // 1. Buscamos todos los turnos del mes para ese servicio
+    $asignaciones = TurnoAsignado::with(['usuario.persona', 'turno', 'usuario.categoria'])
+        ->where('servicio_id', $servicio_id)
+        ->where('mes_id', $mes_id)
+        ->get();
+
+    // 2. Agrupamos por usuario para calcular sus totales
+    $resumen = $asignaciones->groupBy('usuario_id')->map(function ($items) {
+        $primerRegistro = $items->first();
+        $usuario = $primerRegistro->usuario;
+
+        $totalMinutos = $items->sum(function ($a) {
+            $inicio = Carbon::parse($a->turno->hora_inicio);
+            $fin = Carbon::parse($a->turno->hora_fin);
+
+            // Manejo de turnos nocturnos (ej: 22:00 a 06:00)
+            if ($fin->lessThan($inicio)) {
+                $fin->addDay();
+            }
+            return $inicio->diffInMinutes($fin);
+        });
+
+        return [
+            'usuario_id'       => $usuario->id,
+            'usuario_nombre'   => $usuario->persona->nombre_completo ?? $usuario->name,
+            'categoria_nombre' => $usuario->categoria->nombre ?? 'Sin categoría',
+            'total_horas'      => round($totalMinutos / 60, 2),
+            'dias_trabajados'  => $items->unique('fecha')->count(),
+            // Enviamos el detalle por si el PDF necesita listar las fechas
+            'turnos' => $items->map(fn($t) => [
+                'fecha' => $t->fecha,
+                'nombre_turno' => $t->turno->nombre_turno
+            ])
+        ];
+    })->values();
+
+    return response()->json([
+        'status' => 'success',
+        'data'   => $resumen
+    ], 200);
+}
+
 
 }
