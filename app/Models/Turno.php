@@ -9,9 +9,23 @@ use App\Models\Servicio;
 
 class Turno extends Model
 {
+    use HasFactory;
+
     protected $fillable = [
-        'nombre',
+        'nombre', 
+        'hora_inicio',
+        'hora_fin',
+        'duracion_horas',
         'categoria_id'
+    ];
+
+    /**
+     * Esto formatea automáticamente las horas para que Angular 
+     * las reciba como "07:00" en lugar de "07:00:00"
+     */
+    protected $casts = [
+        'hora_inicio' => 'datetime:H:i',
+        'hora_fin' => 'datetime:H:i',
     ];
 
     public function categoria()
@@ -29,6 +43,3 @@ class Turno extends Model
         );
     }
 }
-
-
-

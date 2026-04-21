@@ -119,6 +119,12 @@ Route::prefix("v1")->group(function () {
             Route::apiResource('servicios', ServicioController::class);
             Route::apiResource('turnos', TurnoController::class);
             
+            //CONFIGURACIÓN DE TURNOS POR SERVICIO
+            Route::prefix('servicios')->group(function () {
+       
+                 Route::get('{id}/turnos-habilitados', [ServicioTurnoController::class, 'getTurnosHabilitados']);
+                 Route::post('vincular-turnos', [ServicioTurnoController::class, 'vincularTurnos']);
+    });
             // Seguridad y Password
             Route::put('/usuarios/{id}/password', [UserController::class, 'updatePassword']);
            

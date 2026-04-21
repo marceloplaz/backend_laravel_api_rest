@@ -8,6 +8,50 @@ use Illuminate\Http\Request;
 
 class ServicioTurnoController extends Controller
 {
+public function getTurnosHabilitados($id)
+    {
+        try {
+            $servicio = Servicio::with('turnos')->find($id);
+
+            if (!$servicio) {
+                return response()->json(['message' => 'Servicio no encontrado'], 404);
+            }
+
+            // Retornamos los turnos asociados
+            return response()->json([
+                'data' => $servicio->turnos
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json(['error' => $e->getMessage()], 500);
+        }
+    }
+
+public function vincularTurnos(Request $request)
+    {
+        $request->validate([
+            'servicio_id' => 'required|exists:servicios,id',
+            'turnos_ids' => 'present|array', // present permite que el array venga vacío si se desmarcan todos
+        ]);
+
+        try {
+            $servicio = Servicio::findOrFail($request->servicio_id);
+
+            // Usamos sync() para actualizar la tabla intermedia:
+            // Borra los que ya no están y agrega los nuevos automáticamente.
+            $servicio->turnos()->sync($request->turnos_ids);
+
+            return response()->json([
+                'message' => 'Configuración de turnos actualizada correctamente',
+                'data' => $servicio->load('turnos')->turnos
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Error al sincronizar: ' . $e->getMessage()], 500);
+        }
+    }
+
+
 public function asignar(Request $request, $servicioId)
 {
     $servicio = Servicio::findOrFail($servicioId);
