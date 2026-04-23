@@ -13,21 +13,40 @@ class TurnoController extends Controller
         return response()->json(Turno::all());
     }
 
-    public function store(Request $request)
+ 
+
+public function store(Request $request)
     {
         $request->validate([
-            'nombre_turno' => 'required|string',
-            'hora_inicio' => 'required',
-            'hora_fin' => 'required',
-            'duracion_horas' => 'required|integer'
+            'nombre_turno'   => 'required|string|max:100',
+            'hora_inicio'    => 'required',
+            'hora_fin'       => 'required',
+            'duracion_horas' => 'required|integer',
+            'categoria_id'   => 'nullable|integer'
         ]);
 
-        $turno = Turno::create($request->all());
+        try {
+            $data = $request->all();
+            
+            // Si Angular no manda categoría, asignamos la 1 por defecto para evitar el error de BD
+            if (!$request->has('categoria_id')) {
+                $data['categoria_id'] = 1; 
+            }
 
-        return response()->json($turno, 201);
+            $turno = Turno::create($data);
+
+            return response()->json([
+                'message' => 'Turno creado exitosamente',
+                'data'    => $turno
+            ], 201);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Error al crear el turno en la base de datos',
+                'error'   => $e->getMessage()
+            ], 500);
+        }
     }
-
-
 
 
 

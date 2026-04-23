@@ -3,7 +3,7 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
-// Importación de todos tus controladores
+// Importación de controladores
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\Api\PersonaController;
 use App\Http\Controllers\Api\ServicioController;
@@ -29,8 +29,7 @@ Route::prefix("v1")->group(function () {
         Route::get("/auth/profile", [AuthController::class, "funprofile"]);
         Route::post("/auth/logout", [AuthController::class, "funlogout"]);
         Route::get('persona/{id}', [PersonaController::class, 'show']);
-       
-        
+      
         // --- Consultas Base del Dashboard (Accesibles para todos los logueados) ---
         Route::get("/roles", [UserController::class, "getRoles"]);
         Route::get("/categorias-lista", [TurnoAsignadoController::class, "listaCategorias"]);
@@ -44,14 +43,12 @@ Route::prefix("v1")->group(function () {
         Route::middleware('jugadordeunbit:gestionar_servicios')->group(function () {
             
             Route::get('servicios/{id}', [ServicioController::class, 'show']);
-            Route::apiResource('servicios', ServicioController::class);//habilita los metodos get,post,delete,put 
+            Route::apiResource('servicios', ServicioController::class); 
 
             Route::get('areas', [ServicioController::class, 'getAreas']);
-            // Gestión de la Nómina (Tabla de la derecha y Asignación)
             Route::apiResource('usuario-servicio', UsuarioServicioController::class);
 
-            // Buscador de Profesionales (Para el input de la izquierda)
-             Route::get('buscar-profesionales', [UserController::class, 'index']); 
+            Route::get('buscar-profesionales', [UserController::class, 'index']); 
 
             // Configuración de turnos por servicio
             Route::prefix('servicios/{servicioId}/turnos')->group(function () {
@@ -67,8 +64,7 @@ Route::prefix("v1")->group(function () {
         Route::middleware('jugadordeunbit:asignar_turnos')->group(function () {
             
             Route::prefix('turnos-asignados')->group(function () {
-            
-            Route::post('/', [TurnoAsignadoController::class, 'store']);
+                Route::post('/', [TurnoAsignadoController::class, 'store']);
                 Route::post('intercambiar', [TurnoAsignadoController::class, 'intercambiarTurno']);
                 Route::post('replicar-mes', [TurnoAsignadoController::class, 'replicarMes']);
                 Route::post('/vaciar-mes', [TurnoAsignadoController::class, 'vaciarMes']);
@@ -76,7 +72,6 @@ Route::prefix("v1")->group(function () {
                 Route::post('actualizar', [TurnoAsignadoController::class, 'actualizarPosicion']);
                 Route::put('{id}', [TurnoAsignadoController::class, 'update']);
                 Route::delete('{id}', [TurnoAsignadoController::class, 'destroy']);
-                
             });
 
             Route::prefix('novedades')->group(function () {
@@ -88,7 +83,7 @@ Route::prefix("v1")->group(function () {
         });
 
         // =========================================================
-        // 📊 REPORTES Y VISUALIZACIÓN (Permisos específicos)
+        // 📊 REPORTES Y VISUALIZACIÓN
         // =========================================================
         Route::get('turnos/resumen-mensual', [TurnoAsignadoController::class, 'getResumenMensual']);
         Route::get('reporte-semanal/{semana_id}/{usuario_id?}', [TurnoAsignadoController::class, 'reporteHorasSemana']);
@@ -112,24 +107,29 @@ Route::prefix("v1")->group(function () {
         // 🏗️ ADMINISTRACIÓN DE SISTEMA (Solo para jugadordeunbit:admin_system)
         // =========================================================
         Route::get('personal/exportar-pdf', [PersonaController::class, 'exportarPdf']);
+
         Route::middleware('jugadordeunbit:admin_system')->group(function () {
             Route::apiResource('persona', PersonaController::class);
             Route::apiResource('usuarios', UserController::class);
             Route::apiResource('categorias', CategoriaController::class);
             Route::apiResource('servicios', ServicioController::class);
+            
+            // Esta ruta maneja el POST api/v1/turnos para el modal de "Nuevo Tipo de Turno"
             Route::apiResource('turnos', TurnoController::class);
             
-            //CONFIGURACIÓN DE TURNOS POR SERVICIO
+            // Configuración de turnos vinculados por servicio
             Route::prefix('servicios')->group(function () {
-       
                  Route::get('{id}/turnos-habilitados', [ServicioTurnoController::class, 'getTurnosHabilitados']);
                  Route::post('vincular-turnos', [ServicioTurnoController::class, 'vincularTurnos']);
-    });
+            });
+
             // Seguridad y Password
             Route::put('/usuarios/{id}/password', [UserController::class, 'updatePassword']);
-           
             Route::post("/auth/update-initial-password", [AuthController::class, "updateFirstPassword"]);
+            
+            // Rutas para AdminAuthorization (tokens de seguridad para acciones sensibles)
             Route::post('/auth/generate-action-token', [AuthController::class, 'generateToken']);
+            Route::post('/auth/verify-action-token', [AuthController::class, 'verifyToken']);
         });
 
         // --- Configuración de Calendario ---

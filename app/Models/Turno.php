@@ -12,7 +12,7 @@ class Turno extends Model
     use HasFactory;
 
     protected $fillable = [
-        'nombre', 
+        'nombre_turno', 
         'hora_inicio',
         'hora_fin',
         'duracion_horas',
