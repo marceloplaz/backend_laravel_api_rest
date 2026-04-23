@@ -19,6 +19,10 @@ class Role extends Model
         return $this->belongsToMany(User::class);
     }
 
+    public function servicios()
+{
+    return $this->belongsToMany(Servicio::class, 'role_servicio');
+}
     public function permissions()
     {
         return $this->belongsToMany(Permission::class);

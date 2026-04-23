@@ -16,7 +16,7 @@ Accept: application/json
 
 {
     "email": "jugadordeunbit@gmail.com",
-    "password": "jugadordeunbit5011070"
+    "password": "plaz5011070"
 }
 ### Cambiar Contraseña Inicial
 PUT http://localhost:8000/api/v1/auth/change-password
@@ -70,23 +70,23 @@ Content-Type: application/json
 
 ### Registro Maestro: Usuario + Persona + Rol
 POST http://localhost:8000/api/v1/usuarios
-Authorization: Bearer 13|1v9ffDibWG2GBqSzibhRIigdmhzGdUM6A4BIIgotd0ca48aa
+Authorization: Bearer 382|y3saBaOiiLOM5ESxydxJQX7pR3HIFzjDJhWYJTZV5c0ad172
 Content-Type: application/json
 Accept: application/json
 
 {
-    "name": "carmen rosa cari",
-    "email": "carmenrosacari@gmail.com",
-    "password": "carmenrosa123",
-    "password_confirmation": "carmenrosa123",
+    "name": "carden",
+    "email": "carden@gmail.com",
+    "password": "carden123",
+    "password_confirmation": "carden123",
     "categoria_id": 2,
     "roles": [11],
     "persona": {
-        "nombre_completo": "Carmen Rosa Cari Figueroa",
-        "carnet_identidad": "5011070",
-        "fecha_nacimiento": "1990-05-20",
+        "nombre_completo": "Carden figuerosa",
+        "carnet_identidad": "505897582",
+        "fecha_nacimiento": "1990-05-23",
         "genero": "F",
-        "telefono": "78708800",
+        "telefono": "7870879282",
         "direccion": "B/paraiso",
         "tipo_trabajador": "enfermera",
         "nacionalidad": "Boliviana",

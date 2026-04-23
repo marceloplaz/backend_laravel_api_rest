@@ -23,6 +23,10 @@ class Servicio extends Model
         return $this->belongsToMany(User::class, 'usuario_servicios', 'servicio_id', 'usuario_id')
                     ->withPivot('id', 'descripcion_usuario_servicio', 'fecha_ingreso', 'estado');
     }
+    public function roles()
+{
+    return $this->belongsToMany(Role::class, 'role_servicio');
+}
 
     public function turnos()
     {

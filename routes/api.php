@@ -33,6 +33,7 @@ Route::prefix("v1")->group(function () {
         // --- Consultas Base del Dashboard (Accesibles para todos los logueados) ---
         Route::get("/roles", [UserController::class, "getRoles"]);
         Route::get("/categorias-lista", [TurnoAsignadoController::class, "listaCategorias"]);
+        Route::get("/filtros-jerarquia", [TurnoController::class, "getFiltrosPorJerarquia"]);
         Route::get("/lista-turnos-disponibles", [TurnoController::class, "index"]);
         Route::get("/mis-turnos", [TurnoAsignadoController::class, "misTurnos"]);
         Route::get("/equipo-filtrado", [TurnoAsignadoController::class, "getEquipoFiltrado"]);
