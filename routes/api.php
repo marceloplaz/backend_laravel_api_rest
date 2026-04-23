@@ -25,6 +25,12 @@ Route::prefix("v1")->group(function () {
     // 🔒 RUTAS PROTEGIDAS (Token Sanctum)
     Route::middleware('auth:sanctum')->group(function () {
 
+        // Definición de grupos de acceso (Sincronizado con Angular)
+        $ROLES_ADMIN_FULL = 'super_admin,admin,admin_jefe_medico,admin_jefa_enfermeras,jefa_servicios_generales';
+        $ROLES_JEFATURAS  = $ROLES_ADMIN_FULL . ',jefe_medico_servicio,jefa_enfermeras,jefe_servicio';
+        $ROLES_TURNOS     = $ROLES_JEFATURAS  . ',jefa_enfermeras_servicio';
+        $ROLES_TECNICO    = $ROLES_JEFATURAS  . ',tecnico';
+
         // --- Perfil y Sesión ---
         Route::get("/auth/profile", [AuthController::class, "funprofile"]);
         Route::post("/auth/logout", [AuthController::class, "funlogout"]);
@@ -39,9 +45,9 @@ Route::prefix("v1")->group(function () {
         Route::get("/equipo-filtrado", [TurnoAsignadoController::class, "getEquipoFiltrado"]);
 
         // =========================================================
-        // 🏥 GESTIÓN DE SERVICIOS Y PERSONAL (Jefes de Servicio)
+        // 🏥 GESTIÓN DE SERVICIOS Y PERSONAL (ROLES_JEFATURAS)
         // =========================================================
-        Route::middleware('jugadordeunbit:gestionar_servicios')->group(function () {
+        Route::middleware("jugadordeunbit:{$ROLES_JEFATURAS}")->group(function () {
             
             Route::get('servicios/{id}', [ServicioController::class, 'show']);
             Route::apiResource('servicios', ServicioController::class); 
@@ -50,6 +56,8 @@ Route::prefix("v1")->group(function () {
             Route::apiResource('usuario-servicio', UsuarioServicioController::class);
 
             Route::get('buscar-profesionales', [UserController::class, 'index']); 
+            Route::apiResource('persona', PersonaController::class);
+            Route::apiResource('categorias', CategoriaController::class);
 
             // Configuración de turnos por servicio
             Route::prefix('servicios/{servicioId}/turnos')->group(function () {
@@ -60,9 +68,9 @@ Route::prefix("v1")->group(function () {
         });
 
         // =========================================================
-        // 📅 PLANIFICACIÓN DE TURNOS Y ROLES (Rol: asignar_turnos)
+        // 📅 PLANIFICACIÓN DE TURNOS Y NOVEDADES (ROLES_TURNOS)
         // =========================================================
-        Route::middleware('jugadordeunbit:asignar_turnos')->group(function () {
+        Route::middleware("jugadordeunbit:{$ROLES_TURNOS}")->group(function () {
             
             Route::prefix('turnos-asignados')->group(function () {
                 Route::post('/', [TurnoAsignadoController::class, 'store']);
@@ -96,26 +104,21 @@ Route::prefix("v1")->group(function () {
             ->middleware('jugadordeunbit:ver_reportes');
 
         // =========================================================
-        // ⚠️ GESTIÓN DE INCIDENCIAS
+        // ⚠️ GESTIÓN DE INCIDENCIAS (ROLES_TECNICO)
         // =========================================================
         Route::get('incidencias', [IncidenciaController::class, 'index']);
-        Route::post('incidencias', [IncidenciaController::class, 'store'])
-            ->middleware('jugadordeunbit:reportar_incidencia');
-        Route::put('incidencias/{id}/resolver', [IncidenciaController::class, 'resolver'])
-            ->middleware('jugadordeunbit:resolver_incidencia');
+        Route::middleware("jugadordeunbit:{$ROLES_TECNICO}")->group(function () {
+            Route::post('incidencias', [IncidenciaController::class, 'store']);
+            Route::put('incidencias/{id}/resolver', [IncidenciaController::class, 'resolver']);
+        });
 
         // =========================================================
-        // 🏗️ ADMINISTRACIÓN DE SISTEMA (Solo para jugadordeunbit:admin_system)
+        // 🏗️ ADMINISTRACIÓN Y CONFIGURACIÓN (SOLO SUPER_ADMIN / ADMIN)
         // =========================================================
         Route::get('personal/exportar-pdf', [PersonaController::class, 'exportarPdf']);
 
-        Route::middleware('jugadordeunbit:admin_system')->group(function () {
-            Route::apiResource('persona', PersonaController::class);
+        Route::middleware('jugadordeunbit:super_admin,admin')->group(function () {
             Route::apiResource('usuarios', UserController::class);
-            Route::apiResource('categorias', CategoriaController::class);
-            Route::apiResource('servicios', ServicioController::class);
-            
-            // Esta ruta maneja el POST api/v1/turnos para el modal de "Nuevo Tipo de Turno"
             Route::apiResource('turnos', TurnoController::class);
             
             // Configuración de turnos vinculados por servicio
@@ -128,7 +131,7 @@ Route::prefix("v1")->group(function () {
             Route::put('/usuarios/{id}/password', [UserController::class, 'updatePassword']);
             Route::post("/auth/update-initial-password", [AuthController::class, "updateFirstPassword"]);
             
-            // Rutas para AdminAuthorization (tokens de seguridad para acciones sensibles)
+            // Rutas para AdminAuthorization
             Route::post('/auth/generate-action-token', [AuthController::class, 'generateToken']);
             Route::post('/auth/verify-action-token', [AuthController::class, 'verifyToken']);
         });

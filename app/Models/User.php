@@ -59,11 +59,16 @@ class User extends Authenticatable
         return $this->roles->where('name', $role)->isNotEmpty();
     }
 
-    // 🔷 Verificación de Permisos (Usando la columna 'action' de tu DB)
     public function hasPermission(string $permission): bool
-    {
-        return $this->roles->flatMap->permissions->pluck('action')->contains($permission);
+{
+    // 1. Verificar si el string coincide directamente con el nombre de uno de sus ROLES
+    if ($this->hasRole($permission)) {
+        return true;
     }
+
+    // 2. Si no es un rol, verificar si es un PERMISO técnico en la columna 'action'
+    return $this->roles->flatMap->permissions->pluck('action')->contains($permission);
+}
 
     // 🔷 Relación con Servicios
     public function servicios()
