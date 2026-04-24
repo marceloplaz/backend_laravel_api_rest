@@ -41,6 +41,8 @@ Route::prefix("v1")->group(function () {
         Route::get("/categorias-lista", [TurnoAsignadoController::class, "listaCategorias"]);
         Route::get("/filtros-jerarquia", [TurnoController::class, "getFiltrosPorJerarquia"]);
         Route::get("/lista-turnos-disponibles", [TurnoController::class, "index"]);
+
+        Route::get('servicios/{id}/turnos-habilitados', [ServicioTurnoController::class, 'getTurnosHabilitados']);
         Route::get("/mis-turnos", [TurnoAsignadoController::class, "misTurnos"]);
         Route::get("/equipo-filtrado", [TurnoAsignadoController::class, "getEquipoFiltrado"]);
 
@@ -48,7 +50,8 @@ Route::prefix("v1")->group(function () {
         // 🏥 GESTIÓN DE SERVICIOS Y PERSONAL (ROLES_JEFATURAS)
         // =========================================================
         Route::middleware("jugadordeunbit:{$ROLES_JEFATURAS}")->group(function () {
-            
+            Route::apiResource('usuarios', UserController::class);            
+            Route::apiResource('turnos', TurnoController::class);
             Route::get('servicios/{id}', [ServicioController::class, 'show']);
             Route::apiResource('servicios', ServicioController::class); 
 
@@ -57,6 +60,7 @@ Route::prefix("v1")->group(function () {
 
             Route::get('buscar-profesionales', [UserController::class, 'index']); 
             Route::apiResource('persona', PersonaController::class);
+           
             Route::apiResource('categorias', CategoriaController::class);
 
             // Configuración de turnos por servicio
@@ -118,12 +122,12 @@ Route::prefix("v1")->group(function () {
         Route::get('personal/exportar-pdf', [PersonaController::class, 'exportarPdf']);
 
         Route::middleware('jugadordeunbit:super_admin,admin')->group(function () {
-            Route::apiResource('usuarios', UserController::class);
-            Route::apiResource('turnos', TurnoController::class);
+            
+            
             
             // Configuración de turnos vinculados por servicio
             Route::prefix('servicios')->group(function () {
-                 Route::get('{id}/turnos-habilitados', [ServicioTurnoController::class, 'getTurnosHabilitados']);
+                 
                  Route::post('vincular-turnos', [ServicioTurnoController::class, 'vincularTurnos']);
             });
 
