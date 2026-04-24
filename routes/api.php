@@ -21,6 +21,7 @@ Route::prefix("v1")->group(function () {
     // 🔓 RUTAS PÚBLICAS
     Route::post("/auth/login", [AuthController::class, "funLogin"])->middleware('throttle:5,1');
     Route::post("/auth/register", [AuthController::class, "funRegister"]);
+    Route::get('buscar-profesionales', [UserController::class, 'index']); 
     
     // 🔒 RUTAS PROTEGIDAS (Token Sanctum)
     Route::middleware('auth:sanctum')->group(function () {
@@ -45,7 +46,7 @@ Route::prefix("v1")->group(function () {
         Route::get('servicios/{id}/turnos-habilitados', [ServicioTurnoController::class, 'getTurnosHabilitados']);
         Route::get("/mis-turnos", [TurnoAsignadoController::class, "misTurnos"]);
         Route::get("/equipo-filtrado", [TurnoAsignadoController::class, "getEquipoFiltrado"]);
-
+        
         // =========================================================
         // 🏥 GESTIÓN DE SERVICIOS Y PERSONAL (ROLES_JEFATURAS)
         // =========================================================
@@ -58,7 +59,7 @@ Route::prefix("v1")->group(function () {
             Route::get('areas', [ServicioController::class, 'getAreas']);
             Route::apiResource('usuario-servicio', UsuarioServicioController::class);
 
-            Route::get('buscar-profesionales', [UserController::class, 'index']); 
+            
             Route::apiResource('persona', PersonaController::class);
            
             Route::apiResource('categorias', CategoriaController::class);

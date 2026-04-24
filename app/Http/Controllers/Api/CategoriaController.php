@@ -4,21 +4,34 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
+use App\Models\Categoria;
 
 class CategoriaController extends Controller
 {
     public function index(Request $request)
-    {
+{
+    try {
         $query = Categoria::query();
 
-        // Filtro por nivel
-        if ($request->has('nivel')) {
+        // Filtro por nivel: Validamos que si existe, sea un dato procesable
+        if ($request->has('nivel') && $request->nivel !== null) {
             $query->where('nivel', $request->nivel);
         }
 
-        return response()->json($query->orderBy('nivel')->get());
-    }
+        // Obtenemos los resultados ordenados
+        $categorias = $query->orderBy('nivel', 'asc')->get();
 
+        return response()->json($categorias, 200);
+
+    } catch (\Exception $e) {
+        // Esto te dirá en la pestaña 'Preview' de Chrome el error real (ej. columna no encontrada)
+        return response()->json([
+            'message' => 'Error interno en el servidor al obtener categorías',
+            'error' => $e->getMessage(),
+            'line' => $e->getLine()
+        ], 500);
+    }
+}
     public function show(Categoria $categoria)
 {
     return response()->json(

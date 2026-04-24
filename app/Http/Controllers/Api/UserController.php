@@ -18,19 +18,22 @@ public function index(Request $request)
 {
     $buscar = $request->query('buscar');
 
-    $users = User::with(['categoria', 'persona'])
-        ->when($buscar, function ($query, $buscar) {
-            // Buscamos en el nombre de usuario o en el nombre completo de la tabla personas
-            return $query->where('name', 'like', "%{$buscar}%")
-                         ->orWhereHas('persona', function ($q) use ($buscar) {
-                             $q->where('nombre_completo', 'like', "%{$buscar}%");
-                         });
+    // Buscamos usuarios que no estén ya vinculados o simplemente todos para filtrar
+    $usuarios = \App\Models\User::with(['persona', 'categoria'])
+        ->when($buscar, function ($query) use ($buscar) {
+            $query->where(function ($q) use ($buscar) {
+                // Busca por el nombre de usuario en la tabla users
+                $q->where('name', 'like', "%{$buscar}%")
+                  // O busca por el nombre completo en la tabla personas
+                  ->orWhereHas('persona', function ($subQuery) use ($buscar) {
+                      $subQuery->where('nombre_completo', 'like', "%{$buscar}%");
+                  });
+            });
         })
+        ->limit(10)
         ->get();
 
-    return response()->json([
-        'data' => $users
-    ], 200);
+    return response()->json($usuarios, 200);
 }
 
 public function store(Request $request)
