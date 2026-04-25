@@ -85,6 +85,7 @@ class PersonaController extends Controller
                 ], 201);
             });
 
+
         } catch (\Exception $e) {
             return response()->json([
                 "message" => "Error en el proceso de registro maestro",
@@ -93,6 +94,28 @@ class PersonaController extends Controller
         }
     }
 
+    // entrega tipo salario y tipo de trabajador
+public function getFormDependencies()
+{
+    return response()->json([
+        'categorias' => \App\Models\Categoria::all(['id', 'nombre']),
+        'roles' => \App\Models\Role::all(['id', 'name']), // O el modelo que uses para roles
+        'tipos_salario' => [
+            ['id' => 'TGN', 'nombre' => 'TGN'],
+            ['id' => 'SUS', 'nombre' => 'SUS'],
+            ['id' => 'CONTRATO', 'nombre' => 'CONTRATO'],
+        ],
+        'tipos_trabajador' => [
+            ['id' => 'medico', 'nombre' => 'Médico'],
+            ['id' => 'enfermera', 'nombre' => 'Enfermera'],
+            ['id' => 'manual', 'nombre' => 'Manual'],
+            ['id' => 'chofer', 'nombre' => 'Chofer'],
+            ['id' => 'administrativo', 'nombre' => 'Administrativo'],
+            ['id' => 'tecnico', 'nombre' => 'Tecnico'],
+            ['id' => 'Bioquimico', 'nombre' => 'Bioquimico'],
+        ]
+    ]);
+}
     public function show($id)
 {
     // Buscamos la persona y cargamos su usuario (email, name)

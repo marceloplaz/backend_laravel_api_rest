@@ -51,7 +51,8 @@ Route::prefix("v1")->group(function () {
         // 🏥 GESTIÓN DE SERVICIOS Y PERSONAL (ROLES_JEFATURAS)
         // =========================================================
         Route::middleware("jugadordeunbit:{$ROLES_JEFATURAS}")->group(function () {
-            Route::apiResource('usuarios', UserController::class);            
+          Route::get('persona-catalogos', [PersonaController::class, 'getFormDependencies']);  
+          Route::apiResource('usuarios', UserController::class);            
             Route::apiResource('turnos', TurnoController::class);
             Route::get('servicios/{id}', [ServicioController::class, 'show']);
             Route::apiResource('servicios', ServicioController::class); 
@@ -59,7 +60,6 @@ Route::prefix("v1")->group(function () {
             Route::get('areas', [ServicioController::class, 'getAreas']);
             Route::apiResource('usuario-servicio', UsuarioServicioController::class);
 
-            
             Route::apiResource('persona', PersonaController::class);
            
             Route::apiResource('categorias', CategoriaController::class);

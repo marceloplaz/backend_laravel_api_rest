@@ -18,19 +18,14 @@ public function index(Request $request)
 {
     $buscar = $request->query('buscar');
 
-    // Buscamos usuarios que no estén ya vinculados o simplemente todos para filtrar
     $usuarios = \App\Models\User::with(['persona', 'categoria'])
         ->when($buscar, function ($query) use ($buscar) {
-            $query->where(function ($q) use ($buscar) {
-                // Busca por el nombre de usuario en la tabla users
-                $q->where('name', 'like', "%{$buscar}%")
-                  // O busca por el nombre completo en la tabla personas
+            $query->where('name', 'like', "%{$buscar}%")
                   ->orWhereHas('persona', function ($subQuery) use ($buscar) {
                       $subQuery->where('nombre_completo', 'like', "%{$buscar}%");
                   });
-            });
         })
-        ->limit(10)
+        // Eliminamos el limit(10) para que aparezcan todos en la gestión de categorías
         ->get();
 
     return response()->json($usuarios, 200);
