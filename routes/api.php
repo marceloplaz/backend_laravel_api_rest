@@ -22,6 +22,8 @@ Route::prefix("v1")->group(function () {
     Route::post("/auth/login", [AuthController::class, "funLogin"])->middleware('throttle:5,1');
     Route::post("/auth/register", [AuthController::class, "funRegister"]);
     Route::get('buscar-profesionales', [UserController::class, 'index']); 
+     Route::get('personal/exportar-pdf', [PersonaController::class, 'exportarPdf']);
+
     
     // 🔒 RUTAS PROTEGIDAS (Token Sanctum)
     Route::middleware('auth:sanctum')->group(function () {
@@ -120,8 +122,7 @@ Route::prefix("v1")->group(function () {
         // =========================================================
         // 🏗️ ADMINISTRACIÓN Y CONFIGURACIÓN (SOLO SUPER_ADMIN / ADMIN)
         // =========================================================
-        Route::get('personal/exportar-pdf', [PersonaController::class, 'exportarPdf']);
-
+       
         Route::middleware('jugadordeunbit:super_admin,admin')->group(function () {
             
             

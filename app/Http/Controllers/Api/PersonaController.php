@@ -33,6 +33,7 @@ class PersonaController extends Controller
         return PersonaResource::collection($query->paginate($perPage));
     }
 
+    
     public function store(Request $request)
     {
         // 1. VALIDACIÓN COMPLETA
@@ -173,15 +174,30 @@ public function getFormDependencies()
         }
     }
 
-    public function exportarPdf()
+
+         public function exportarPdf(Request $request)
     {
-        // Traemos todos los datos de la tabla personas
-        $personal = Persona::all();
+    // 1. Obtenemos el ID de la categoría del request (si existe)
+    $categoriaId = $request->query('categoria_id');
 
-        // Cargamos la vista usando la ruta de puntos: carpeta.archivo
-        $pdf = Pdf::loadView('pdf.reporte_personal', compact('personal'));
+    // 2. Consultamos con filtro opcional usando una relación
+    $personal = Persona::with(['user.categoria'])
+        ->when($categoriaId, function ($query) use ($categoriaId) {
+            $query->whereHas('user', function ($q) use ($categoriaId) {
+                $q->where('categoria_id', $categoriaId);
+            });
+        })
+        ->get();
 
-        // Retornamos el archivo para que Angular lo reciba
-        return $pdf->download('reporte_personal.pdf');
+    // 3. Definimos un título dinámico para la vista Blade
+    $titulo = "Reporte General de Personal";
+    if ($categoriaId) {
+        $cat = \App\Models\Categoria::find($categoriaId);
+        $titulo = "Reporte de Personal: " . ($cat ? $cat->nombre : 'Categoría Desconocida');
+    }
+
+    // 4. Cargamos la vista con los datos
+   $pdf = Pdf::loadView('pdf.reporte_por_categoria', compact('personal', 'titulo'));
+   return $pdf->stream('reporte_personal.pdf');
     }
 }
