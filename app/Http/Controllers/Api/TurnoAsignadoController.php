@@ -312,7 +312,9 @@ public function getEquipoFiltrado(Request $request)
                     return [
                         'id_asignacion' => $ta->id,
                         'nombre_turno'  => $ta->turno->nombre_turno,
-                        'horario'       => $ta->turno->hora_inicio . ' - ' . $ta->turno->hora_fin,
+                        'hora_inicio'   => $ta->turno->hora_inicio, 
+                        'hora_fin'      => $ta->turno->hora_fin,
+                        'duracion_horas' => $ta->turno->duracion_horas, // Asegúrate de incluir esta línea
                         'fecha'         => $ta->fecha,
                         'color'         => $ta->turno->color ?? '#52600c',
                         'area_nombre'   => $ta->area ? $ta->area->nombre : null
