@@ -74,40 +74,51 @@
         </tr>
     </thead>
     <tbody>
-        @foreach($usuarios as $u)
-        <tr>
-            <td class="col-personal">
-                <span class="nombre-p">{{ $u->persona->nombre_completo ?? $u->name }}</span>
-                <span class="cargo-p">{{ $categoria->nombre }}</span>
+    @foreach($usuarios as $u)
+    <tr>
+        <td class="col-personal">
+            <span class="nombre-p">{{ $u->persona->nombre_completo ?? $u->name }}</span>
+            <span class="cargo-p">{{ $categoria->nombre }}</span>
+        </td>
+
+        @for($i = 1; $i <= 7; $i++)
+            @php
+                // Buscamos la asignación para el día actual
+                $asignacion = $u->turnosAsignados->first(function($item) use ($i) {
+                    return (int)\Carbon\Carbon::parse($item->fecha)->format('N') === $i;
+                });
+            @endphp
+
+            <td align="center">
+                @if($asignacion && $asignacion->turno)
+                    <div class="turno-box">
+                        {{-- 1. AREA --}}
+                        @if($asignacion->area)
+                            <div style="font-size: 6px; color: #00796b; font-weight: bold; text-transform: uppercase; border-bottom: 0.5px solid #b2dfdb; margin-bottom: 2px;">
+                                {{ $asignacion->area->nombre }}
+                            </div>
+                        @endif
+
+                        {{-- 2. NOMBRE DEL TURNO --}}
+                        <span class="turno-nombre">
+                            {{ $asignacion->turno->nombre_turno }}
+                        </span>
+
+                        {{-- 3. HORA (Desde la relación turno) --}}
+                        
+                        <span class="turno-horas" style="display: block; font-size: 7px;">
+                {{ \Carbon\Carbon::parse($asignacion->turno->hora_inicio)->format('H:i') }} - 
+                {{ \Carbon\Carbon::parse($asignacion->turno->hora_fin)->format('H:i') }}
+            </span>
+                    </div>
+                @else
+                    <span class="vacio">-</span>
+                @endif
             </td>
-
-            @for($i = 1; $i <= 7; $i++)
-                @php
-                    $asignacion = $u->turnosAsignados->first(function($item) use ($i) {
-                        return (int)\Carbon\Carbon::parse($item->fecha)->format('N') === $i;
-                    });
-                @endphp
-
-                <td align="center">
-                    @if($asignacion && $asignacion->turno)
-                        <div class="turno-box">
-                            <span class="turno-nombre">
-                                {{-- Usamos nombre_turno según tu modelo Turno --}}
-                                {{ $asignacion->turno->nombre_turno }}
-                            </span>
-                            <span class="turno-horas">
-                                {{ \Carbon\Carbon::parse($asignacion->turno->hora_inicio)->format('H:i') }} - 
-                                {{ \Carbon\Carbon::parse($asignacion->turno->hora_fin)->format('H:i') }}
-                            </span>
-                        </div>
-                    @else
-                        <span class="vacio">-</span>
-                    @endif
-                </td>
-            @endfor
-        </tr>
-        @endforeach
-    </tbody>
+        @endfor {{-- Fin del bucle de los 7 días --}}
+    </tr>
+    @endforeach {{-- Fin del bucle de usuarios --}}
+</tbody>
 </table>
 
 </body>

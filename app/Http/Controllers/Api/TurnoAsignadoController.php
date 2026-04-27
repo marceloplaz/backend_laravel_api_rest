@@ -211,7 +211,7 @@ public function reporteSemanal(Request $request, $semana_id)
         'turnosAsignados' => function($q) use ($semana_id, $servicio_id) {
             $q->where('semana_id', $semana_id)
               ->where('servicio_id', $servicio_id)
-              ->with(['turno']); 
+              ->with(['turno', 'area' ]); 
         }
     ])
     ->where('categoria_id', $categoria_id)
@@ -350,14 +350,15 @@ public function getEquipoFiltrado(Request $request)
                 'categoria_nombre' => $user->categoria ? $user->categoria->nombre : 'Sin categoría',
                 'turnos' => $user->turnosAsignados->map(function($ta) {
                     return [
-                        'id_asignacion' => $ta->id,
-                        'nombre_turno'  => $ta->turno->nombre_turno,
-                        'hora_inicio'   => $ta->turno->hora_inicio, 
-                        'hora_fin'      => $ta->turno->hora_fin,
-                        'duracion_horas' => $ta->turno->duracion_horas, // Asegúrate de incluir esta línea
-                        'fecha'         => $ta->fecha,
-                        'color'         => $ta->turno->color ?? '#52600c',
-                        'area_nombre'   => $ta->area ? $ta->area->nombre : null
+         'id_asignacion' => $ta->id,
+        'nombre_turno'  => $ta->turno->nombre_turno,
+        // USAR DIRECTAMENTE LOS DATOS DE LA TABLA TURNOS
+        'hora_inicio'   => \Carbon\Carbon::parse($ta->turno->hora_inicio)->format('H:i'), 
+        'hora_fin'      => \Carbon\Carbon::parse($ta->turno->hora_fin)->format('H:i'),
+        'duracion_horas'=> $ta->turno->duracion_horas,
+        'fecha'         => $ta->fecha,
+        'color'         => $ta->turno->color ?? '#52600c',
+        'area_nombre'   => $ta->area ? $ta->area->nombre : null
                         
                     ];
                 })        
