@@ -29,10 +29,15 @@ Route::prefix("v1")->group(function () {
     Route::middleware('auth:sanctum')->group(function () {
 
         // Definición de grupos de acceso (Sincronizado con Angular)
-        $ROLES_ADMIN_FULL = 'super_admin,admin,admin_jefe_medico,admin_jefa_enfermeras,jefa_servicios_generales';
-        $ROLES_JEFATURAS  = $ROLES_ADMIN_FULL . ',jefe_medico_servicio,jefa_enfermeras,jefe_servicio';
-        $ROLES_TURNOS     = $ROLES_JEFATURAS  . ',jefa_enfermeras_servicio';
-        $ROLES_TECNICO    = $ROLES_JEFATURAS  . ',tecnico';
+        // En api.php
+        // En routes/api.php
+$ROLES_ADMIN_FULL = 'super_admin,admin,admin_jefe_medico,admin_jefa_enfermeras,admin_jefa_servicios_generales';
+$ROLES_JEFATURAS  = $ROLES_ADMIN_FULL . ',jefe_medico_servicio,jefa_enfermeras_servicio,jefe_servicio';
+
+$ROLES_TURNOS     = $ROLES_JEFATURAS  . ',jefa_enfermeras_servicio'; 
+
+// CORRECCIÓN: Se cambió 'tecnico' por 'responsable_tecnico' para coincidir con Angular
+$ROLES_TECNICO    = $ROLES_JEFATURAS  . ',responsable_tecnico';
 
         // --- Perfil y Sesión ---
         Route::get("/auth/profile", [AuthController::class, "funprofile"]);

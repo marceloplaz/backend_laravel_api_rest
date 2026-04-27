@@ -12,27 +12,28 @@ use Illuminate\Support\Facades\Validator;
 class AuthController extends Controller
 {
     public function funRegister(Request $request)
-    { 
-        $request->validate([
-            "name"      => "required|string|min:3|max:30",
-            "email"     => "required|email|unique:users,email",
-            "password"  => "required|min:8",    
-            "password2" => "required|same:password"
-        ]);
+{ 
+    $request->validate([
+        "name"      => "required|string|min:3|max:30",
+        "email"     => "required|email|unique:users,email",
+        "password"  => "required|min:8",    
+        "password2" => "required|same:password",
+        "rol_id"    => "required|exists:roles,id" // Validamos que el rol exista
+    ]);
 
-        $user = new User();
-        $user->name = $request->name;
-        $user->email = $request->email;
-        $user->password = Hash::make($request->password);
-        // Por defecto, si el admin los registra, deben cambiarla
-        $user->must_change_password = true; 
-        $user->save();
-
-        return response()->json([
-            "message" => "Usuario registrado con éxito",
-            "user"    => new UserResource($user)
-        ], 201);
-    } 
+    $user = new User();
+    $user->name = $request->name;
+    $user->email = $request->email;
+    $user->password = Hash::make($request->password);
+    $user->must_change_password = true; 
+    $user->save(); // 1. Guarda al usuario
+   // En tu método de registro
+$user->roles()->sync([$request->rol_id]);
+   return response()->json([
+        "message" => "Usuario y rol registrados con éxito",
+        "user"    => new UserResource($user) // Solo instanciamos el recurso, sin 'return'
+    ], 201);
+}
 
     public function funLogin(Request $request)
     {
@@ -47,6 +48,7 @@ class AuthController extends Controller
 
         $user = Auth::user(); 
         $token = $user->createToken('auth_token')->plainTextToken;
+        $user->load('roles');
 
         $mensaje = "¡Bienvenido, " . $user->name . "!";
         if ($user->must_change_password) {

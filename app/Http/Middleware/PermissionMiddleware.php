@@ -14,30 +14,40 @@ class PermissionMiddleware
      * @param  \Closure  $next
      * @param  string  ...$permissions  <-- Cambiado a spread operator para recibir múltiples valores
      */
-    public function handle(Request $request, Closure $next, ...$permissions): Response
-    {
-        // 1. Verificar si el usuario está logueado
-        if (!$request->user()) {
-            return response()->json(['message' => 'No autenticado'], 401);
-        }
+    // App\Http\Middleware\PermissionMiddleware.php
 
-        // 2. Verificar si el usuario tiene AL MENOS UNO de los permisos enviados
-        $tienePermiso = false;
-        foreach ($permissions as $permission) {
-            if ($request->user()->hasPermission($permission)) {
-                $tienePermiso = true;
-                break;
-            }
-        }
+// App\Http\Middleware\PermissionMiddleware.php
+// App\Http\Middleware\PermissionMiddleware.php
+public function handle(Request $request, Closure $next, ...$permissions): Response
+{
+    $user = $request->user();
+    
+    // 1. Obtenemos los roles del usuario
+    $rolesEnDB = \DB::table('roles')
+        ->join('role_user', 'roles.id', '=', 'role_user.role_id')
+        ->where('role_user.user_id', $user->id)
+        ->pluck('name')
+        ->toArray();
 
-        if (!$tienePermiso) {
-            // Unimos los permisos en un string para el mensaje de error
-            $listaPermisos = implode(', ', $permissions);
-            return response()->json([
-                'message' => "No tienes el permiso necesario: [$listaPermisos]"
-            ], 403);
-        }
+    // 2. Procesamos los permisos/roles requeridos por la ruta
+    $allPermissions = [];
+    foreach ($permissions as $p) {
+        $allPermissions = array_merge($allPermissions, explode(',', $p));
+    }
 
+    // 3. Verificamos si hay coincidencia
+    $hasPermission = !empty(array_intersect($rolesEnDB, $allPermissions));
+
+    if ($hasPermission) {
+        // ESTA ES LA LÍNEA MÁS IMPORTANTE: Permite que la petición siga al controlador
         return $next($request);
     }
+
+    // 4. Si no tiene permiso, lanzamos el error 403 real
+    return response()->json([
+        'message' => 'No tienes permisos para acceder a esta ruta.',
+        'tus_roles' => $rolesEnDB,
+        'roles_requeridos' => $allPermissions
+    ], 403);
+}
 }

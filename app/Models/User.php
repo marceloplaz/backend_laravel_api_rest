@@ -54,10 +54,16 @@ class User extends Authenticatable
     }
 
     // 🔷 Verificación de Roles
-    public function hasRole(string $role): bool
-    {
-        return $this->roles->where('name', $role)->isNotEmpty();
-    }
+  // App\Models\User.php
+public function hasRole(string $role): bool
+{
+    // Usamos 'exists()' para que Laravel haga una consulta REAL a la base de datos
+    // si la relación aún no ha sido cargada.
+    return $this->roles()
+        ->where('roles.name', 'like', trim($role))
+        ->exists();
+}
+
 
     public function hasPermission(string $permission): bool
 {
