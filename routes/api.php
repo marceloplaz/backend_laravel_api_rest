@@ -53,8 +53,19 @@ Route::prefix("v1")->group(function () {
         // 🏥 GESTIÓN DE SERVICIOS Y PERSONAL (ROLES_JEFATURAS)
         // =========================================================
         Route::middleware("jugadordeunbit:{$ROLES_JEFATURAS}")->group(function () {
-          Route::get('persona-catalogos', [PersonaController::class, 'getFormDependencies']);  
-          Route::apiResource('usuarios', UserController::class);            
+        Route::prefix('reportes')->group(function () {
+        Route::get('semanal/{semana_id}', [TurnoAsignadoController::class, 'reporteSemanal']);
+        Route::get('mensual/{mes_id}', [TurnoAsignadoController::class, 'reporteMensual']);
+        Route::get('reporte-semanal/{semana_id}/{usuario_id?}', [TurnoAsignadoController::class, 'reporteHorasSemana']);
+          Route::get('turnos/resumen-mensual', [TurnoAsignadoController::class, 'getResumenMensual']);
+        }); 
+            Route::get('persona-catalogos', [PersonaController::class, 'getFormDependencies']);  
+              
+          
+              Route::get('/reporte/{mes_id}', [TurnoAsignadoController::class, 'reporteMensual'])
+            ->middleware('jugadordeunbit:ver_reportes');
+
+           Route::apiResource('usuarios', UserController::class);            
             Route::apiResource('turnos', TurnoController::class);
             Route::get('servicios/{id}', [ServicioController::class, 'show']);
             Route::apiResource('servicios', ServicioController::class); 
@@ -101,14 +112,12 @@ Route::prefix("v1")->group(function () {
         // =========================================================
         // 📊 REPORTES Y VISUALIZACIÓN
         // =========================================================
-        Route::get('turnos/resumen-mensual', [TurnoAsignadoController::class, 'getResumenMensual']);
-        Route::get('reporte-semanal/{semana_id}/{usuario_id?}', [TurnoAsignadoController::class, 'reporteHorasSemana']);
+        
         
         Route::get('/servicio/{servicioId}/equipo', [TurnoAsignadoController::class, 'verTurnosPorJerarquia'])
             ->middleware('jugadordeunbit:ver_equipo');
 
-        Route::get('/reporte/{mes_id}', [TurnoAsignadoController::class, 'reporteMensual'])
-            ->middleware('jugadordeunbit:ver_reportes');
+      
 
         // =========================================================
         // ⚠️ GESTIÓN DE INCIDENCIAS (ROLES_TECNICO)

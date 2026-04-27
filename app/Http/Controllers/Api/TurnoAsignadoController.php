@@ -7,6 +7,7 @@ use App\Models\TurnoAsignado;
 use App\Models\Semana;
 use App\Models\Turno;
 use App\Models\Servicio;
+use App\Models\Categoria;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB; // IMPORTANTE: Para corregir el error "Class DB not found"
@@ -193,6 +194,45 @@ public function verTurnosPorJerarquia(Request $request, $servicioId)
         ], 500);
     }
     }
+
+
+
+public function reporteSemanal(Request $request, $semana_id)
+{
+    $servicio_id = $request->query('servicio_id');
+    $categoria_id = $request->query('categoria_id');
+
+    $semana = \App\Models\Semana::with('mes')->findOrFail($semana_id);
+    $servicio = \App\Models\Servicio::findOrFail($servicio_id);
+    $categoria = \App\Models\Categoria::findOrFail($categoria_id);
+
+    $usuarios = \App\Models\User::with([
+        'persona', 
+        'turnosAsignados' => function($q) use ($semana_id, $servicio_id) {
+            $q->where('semana_id', $semana_id)
+              ->where('servicio_id', $servicio_id)
+              ->with(['turno']); 
+        }
+    ])
+    ->where('categoria_id', $categoria_id)
+    ->whereHas('servicios', function($q) use ($servicio_id) {
+        $q->where('servicios.id', $servicio_id);
+    })
+    ->get();
+
+    $data = [
+        'servicio'  => $servicio,
+        'categoria' => $categoria,
+        'mes'       => $semana->mes->nombre,
+        'periodo'   => "Semana {$semana->numero_semana} ({$semana->fecha_inicio} a {$semana->fecha_fin})",
+        'usuarios'  => $usuarios 
+    ];
+
+    $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.reporteSemanal', $data)
+                ->setPaper('a4', 'landscape');
+    
+    return $pdf->stream("Reporte_Semanal_{$servicio->nombre}.pdf");
+}
 
     /**
      * 3. REPORTE MENSUAL
@@ -711,5 +751,61 @@ public function getResumenMensual(Request $request)
     ], 200);
 }
 
+
+private function formatearDatosParaPDF($asignaciones)
+{
+    $resultado = [];
+
+    // Agrupamos por usuario
+    $grupos = $asignaciones->groupBy('usuario_id');
+
+    foreach ($grupos as $usuarioId => $items) {
+        $primerItem = $items->first();
+        $usuario = $primerItem->usuario;
+        
+        // VALIDACIÓN: Si el usuario no existe, saltamos este grupo o ponemos "Desconocido"
+        if (!$usuario || !$usuario->persona) {
+            continue; 
+        }
+
+        $turnosPorDia = [];
+        $totalHoras = 0;
+
+        foreach ($items as $asig) {
+            // Manejo seguro de la fecha y nombre del día
+            try {
+                $nombreDia = \Carbon\Carbon::parse($asig->fecha)
+                    ->locale('es')
+                    ->isoFormat('dddd');
+                $nombreDia = ucfirst($nombreDia);
+            } catch (\Exception $e) {
+                $nombreDia = 'Fecha Inválida';
+            }
+
+            // VALIDACIÓN: Verificar que el turno exista antes de acceder a sus propiedades
+            if ($asig->turno) {
+                $turnosPorDia[$nombreDia] = [
+                    'nombre' => $asig->turno->nombre_turno ?? 'Sin nombre',
+                    'horas'  => ($asig->turno->hora_inicio ?? '00:00') . ' - ' . ($asig->turno->hora_fin ?? '00:00')
+                ];
+                $totalHoras += $asig->turno->duracion_horas ?? 0;
+            } else {
+                $turnosPorDia[$nombreDia] = [
+                    'nombre' => 'Turno no encontrado',
+                    'horas'  => '--'
+                ];
+            }
+        }
+
+        $resultado[] = [
+            'nombre'      => $usuario->persona->nombre_completo ?? 'Usuario sin nombre',
+            'turnos'      => $turnosPorDia,
+            'total_dias'  => $items->count(),
+            'total_horas' => $totalHoras
+        ];
+    }
+
+    return $resultado;
+}
 
 }
