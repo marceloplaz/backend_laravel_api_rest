@@ -8,7 +8,7 @@ use App\Models\TurnoAsignado;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
-
+use Illuminate\Support\Facades\Log;
 
 class NovedadLaboralController extends Controller
 {
@@ -24,76 +24,69 @@ public function index()
 }     
 
 
-    public function permutarConNovedad(Request $request)
-{
-    $request->validate([
-        'id_origen'    => 'required|exists:turnos_asignados,id',
-        'id_destino'   => 'nullable|exists:turnos_asignados,id', // Puede ser opcional
-        'usuario_reemplazo_id' => 'required_if:id_destino,null|exists:users,id',
-        'tipo_novedad' => 'required|in:permiso,baja_medica,vacacion,licencia,devolucion_turno',
-        'observacion'  => 'nullable|string'
-    ]);
+public function permutarConNovedad(Request $request)
+    {
+        $request->validate([
+            'id_origen'            => 'required|exists:turnos_asignados,id',
+            'usuario_reemplazo_id' => 'required|exists:users,id',
+            'tipo_novedad'         => 'required|in:permiso,baja_medica,vacacion,licencia,devolucion_turno',
+            'fecha_devolucion'     => 'nullable|date', // Fecha en que Wilson le devuelve a Juan
+            'observacion'          => 'nullable|string'
+        ]);
 
-    try {
-        return DB::transaction(function () use ($request) {
-            $turnoA = TurnoAsignado::with('usuario.persona')->findOrFail($request->id_origen);
-            
-            // Datos para el historial
-            $fechaOriginalA = $turnoA->fecha;
-            $usuarioA = $turnoA->usuario_id;
-            $nombreA = $turnoA->usuario->persona->nombre_completo ?? 'Personal A';
+        try {
+            return DB::transaction(function () use ($request) {
+                // 1. Obtener el turno que Juan quiere ceder
+                $turnoA = TurnoAsignado::findOrFail($request->id_origen);
+                $solicitanteId = $turnoA->usuario_id; // Juan
+                $reemplazoId = $request->usuario_reemplazo_id; // Wilson
 
-            if ($request->filled('id_destino')) {
-                // CASO A: INTERCAMBIO (SWAP)
-                $turnoB = TurnoAsignado::with('usuario.persona')->findOrFail($request->id_destino);
-                $nombreB = $turnoB->usuario->persona->nombre_completo ?? 'Personal B';
+                // 2. EJECUTAR CAMBIO AUTOMÁTICO (Juan -> Wilson)
+                // El turno físico #2128 sigue siendo el mismo ID, pero cambia de dueño
+                $turnoA->usuario_id = $reemplazoId;
+                $turnoA->estado = $request->tipo_novedad;
+                $turnoA->save();
 
-                // Intercambio de datos
-                $fechaB = $turnoB->fecha;
-                $semanaB = $turnoB->semana_id;
+                // 3. EJECUTAR DEVOLUCIÓN AUTOMÁTICA (Si aplica)
+                $conDevolucion = 0;
+                if ($request->fecha_devolucion) {
+                    $turnoDevolucion = TurnoAsignado::where('usuario_id', $reemplazoId)
+                        ->whereDate('fecha', $request->fecha_devolucion)
+                        ->first();
 
-                $turnoA->update([
-                    'fecha' => $fechaB,
-                    'semana_id' => $semanaB,
-                    'estado' => $request->tipo_novedad
+                    if ($turnoDevolucion) {
+                        $turnoDevolucion->usuario_id = $solicitanteId;
+                        $turnoDevolucion->save();
+                        $conDevolucion = 1;
+                        Log::info("Devolución automática aplicada en turno ID: {$turnoDevolucion->id}");
+                    }
+                }
+
+                // 4. REGISTRAR LA NOVEDAD (Para las etiquetas visuales)
+                // Importante: Guardamos quien era el solicitante original para que Angular lo sepa
+                $novedad = NovedadLaboral::create([
+                    'asignacion_id'          => $turnoA->id,
+                    'tipo_novedad'           => $request->tipo_novedad,
+                    'usuario_solicitante_id' => $solicitanteId,
+                    'usuario_reemplazo_id'   => $reemplazoId,
+                    'fecha_original'         => $turnoA->fecha,
+                    'fecha_devolucion'       => $request->fecha_devolucion, // Añade este campo si existe en tu DB
+                    'con_devolucion'         => $conDevolucion,
+                    'observacion_detalle'    => $request->observacion ?? "Cambio automático realizado",
+                    'estado'                 => 'PROCESADO' 
                 ]);
 
-                $turnoB->update([
-                    'fecha' => $fechaOriginalA,
-                    'semana_id' => $turnoA->semana_id
+                return response()->json([
+                    'status' => 'success', 
+                    'message' => 'Novedad e intercambio procesados correctamente.',
+                    'data' => $novedad
                 ]);
-
-                $reemplazoId = $turnoB->usuario_id;
-                $msg = "Intercambio realizado entre {$nombreA} y {$nombreB}.";
-            } else {
-                // CASO B: REASIGNACIÓN SIMPLE (Baja/Permiso sin intercambio)
-                $turnoA->update([
-                    'usuario_id' => $request->usuario_reemplazo_id,
-                    'estado' => $request->tipo_novedad
-                ]);
-                
-                $reemplazoId = $request->usuario_reemplazo_id;
-                $msg = "Turno reasignado exitosamente.";
-            }
-
-            // 3. REGISTRAR EN TABLA DE NOVEDADES
-            NovedadLaboral::create([
-                'asignacion_id'          => $turnoA->id,
-                'tipo_novedad'           => $request->tipo_novedad,
-                'usuario_solicitante_id' => $usuarioA,
-                'usuario_reemplazo_id'   => $reemplazoId,
-                'fecha_original'         => $fechaOriginalA,
-                'fecha_nueva'            => $turnoA->fecha,
-                'con_devolucion'         => 0,
-                'observacion_detalle'    => $request->observacion ?? $msg
-            ]);
-
-            return response()->json(['status' => 'success', 'message' => $msg]);
-        });
-    } catch (\Exception $e) {
-        return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
+            });
+        } catch (\Exception $e) {
+            Log::error("Error en permutarConNovedad: " . $e->getMessage());
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
+        }
     }
-}
 public function marcarDevolucion($id)
 {
     try {
@@ -164,4 +157,124 @@ public function show($id)
     return response()->json($novedad);
 }
 
+// NovedadLaboralController.php
+public function registrarNovedad(Request $request)
+{
+    DB::beginTransaction();
+    try {
+        // 1. Crear el registro de la novedad (esto se queda igual para tu historial)
+        $novedad = NovedadLaboral::create([
+            'asignacion_id'          => $request->asignacion_id,
+            'tipo_novedad'           => $request->tipo_novedad,
+            'usuario_solicitante_id' => $request->usuario_actual_id, // SOFIA
+            'usuario_reemplazo_id'   => $request->usuario_reemplazo_id, // EDSON
+            'fecha_original'         => $request->fecha_turno,
+            'con_devolucion'         => ($request->tipo_novedad == 'devolucion_turno') ? 1 : 0,
+            'observacion_detalle'    => $request->observacion
+        ]);
+
+        // 2. PASO CLAVE: Anotación Informativa (SIN CAMBIAR usuario_id)
+        
+        // A. Turno del Solicitante (Sofia): Ella sigue en su fila, pero anotamos su reemplazo
+        $turnoSolicitante = TurnoAsignado::find($request->asignacion_id);
+        // Usamos campos de estado o meta-datos para no mover la fila
+        $turnoSolicitante->estado = 'REEMPLAZADO'; 
+        // Si añadiste las columnas que sugerimos:
+        // $turnoSolicitante->reemplazo_por_id = $request->usuario_reemplazo_id;
+        $turnoSolicitante->save();
+
+        // B. Turno del Reemplazo (Edson): Buscamos su turno en la misma fecha
+        $turnoReemplazo = TurnoAsignado::where('usuario_id', $request->usuario_reemplazo_id)
+            ->whereDate('fecha', $request->fecha_turno)
+            ->first();
+
+        if ($turnoReemplazo) {
+            $turnoReemplazo->estado = 'CUBRIENDO_TURNO';
+            // $turnoReemplazo->cubriendo_a_id = $request->usuario_actual_id;
+            $turnoReemplazo->save();
+        }
+
+        DB::commit();
+        return response()->json([
+            'message' => 'Novedad registrada: Sofia se mantiene en su fila y Edson en la suya.',
+            'novedad' => $novedad
+        ]);
+        
+    } catch (\Exception $e) {
+        DB::rollBack();
+        return response()->json(['error' => $e->getMessage()], 500);
+    }
+}
+
+public function confirmar(Request $request, $id)
+    {
+        return DB::transaction(function () use ($id) {
+            // 1. Inicio de traza
+            Log::info("=== INICIANDO PROCESO DE CONFIRMACIÓN - NOVEDAD #$id ===");
+
+            $novedad = NovedadLaboral::findOrFail($id);
+
+            // 2. Validación del turno original (El que Juan le da a Wilson)
+            if (!$novedad->turno_origen_id) {
+                Log::warning("Falla: Novedad #$id no tiene vinculado un turno_origen_id.");
+                return response()->json([
+                    'res' => false,
+                    'message' => "Error: La novedad no tiene un turno original asociado."
+                ], 422);
+            }
+
+            $turnoOrigen = TurnoAsignado::find($novedad->turno_origen_id);
+
+            if (!$turnoOrigen) {
+                Log::error("Falla: El TurnoAsignado #{$novedad->turno_origen_id} no existe en la DB.");
+                return response()->json([
+                    'res' => false,
+                    'message' => "No se encontró el turno original (ID: #{$novedad->turno_origen_id}). Verifique si fue eliminado."
+                ], 404);
+            }
+
+            // 3. Ejecutar primer cambio: Juan -> Wilson (Jueves)
+            Log::info("Paso 1: Moviendo turno #{$turnoOrigen->id} del solicitante (ID:{$novedad->solicitante_id}) al reemplazo (ID:{$novedad->usuario_reemplazo_id})");
+            
+            $turnoOrigen->usuario_id = $novedad->usuario_reemplazo_id;
+            $turnoOrigen->save();
+
+            // 4. Ejecutar segundo cambio: Wilson -> Juan (Domingo - Devolución)
+            if ($novedad->fecha_devolucion) {
+                Log::info("Paso 2: Buscando turno de Wilson para devolver el día: {$novedad->fecha_devolucion}");
+
+                $turnoDevolucion = TurnoAsignado::where('usuario_id', $novedad->usuario_reemplazo_id)
+                    ->whereDate('fecha', $novedad->fecha_devolucion)
+                    ->first();
+
+                if ($turnoDevolucion) {
+                    Log::info("Éxito: Turno de devolución encontrado (ID: #{$turnoDevolucion->id}). Moviendo a solicitante original.");
+                    
+                    $turnoDevolucion->usuario_id = $novedad->solicitante_id;
+                    $turnoDevolucion->save();
+                } else {
+                    Log::warning("Aviso: Wilson no tiene un turno asignado el {$novedad->fecha_devolucion}. No hay qué devolver.");
+                    
+                    // Si quieres que el proceso falle si no hay devolución, descomenta el return de abajo:
+                    /*
+                    return response()->json([
+                        'res' => false,
+                        'message' => "Se movió el primer turno, pero Wilson no tiene un turno asignado el domingo para devolver."
+                    ], 422);
+                    */
+                }
+            }
+
+            // 5. Finalizar Novedad
+            $novedad->con_devolucion = 1;
+            $novedad->save();
+
+            Log::info("=== PROCESO COMPLETADO EXITOSAMENTE PARA NOVEDAD #$id ===");
+
+            return response()->json([
+                'res' => true,
+                'message' => 'Intercambio de turnos realizado correctamente.'
+            ], 200);
+        });
+    }
 }

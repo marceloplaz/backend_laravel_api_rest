@@ -110,6 +110,8 @@ $ROLES_TECNICO    = $ROLES_JEFATURAS  . ',responsable_tecnico';
                 Route::get('/', [NovedadLaboralController::class, 'index']);
                 Route::post('/registrar', [NovedadLaboralController::class, 'store']);
                 Route::post('/permutar-turnos', [NovedadLaboralController::class, 'permutarConNovedad']);
+                
+                Route::post('/{novedad}/confirmar-devolucion', [NovedadLaboralController::class, 'confirmar']);
                 Route::put('/{id}/devolver', [NovedadLaboralController::class, 'marcarDevolucion']);
             });
         });

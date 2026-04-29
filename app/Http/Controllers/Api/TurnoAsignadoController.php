@@ -340,7 +340,8 @@ public function getEquipoFiltrado(Request $request)
 
         // --- CAMBIO AQUÍ: Agregamos 'area' en el with() ---
         $equipo = $query->with(['persona', 'categoria', 'turnosAsignados' => function($q) use ($semana_id) {
-            $q->where('semana_id', $semana_id)->with(['turno', 'area']); 
+           
+        $q->where('semana_id', $semana_id)->with(['turno', 'area', 'novedad.solicitante.persona']); 
         }])->get();
 
         $resultado = $equipo->map(function($user) {
@@ -358,8 +359,26 @@ public function getEquipoFiltrado(Request $request)
         'duracion_horas'=> $ta->turno->duracion_horas,
         'fecha'         => $ta->fecha,
         'color'         => $ta->turno->color ?? '#52600c',
-        'area_nombre'   => $ta->area ? $ta->area->nombre : null
-                        
+        'area_nombre'   => $ta->area ? $ta->area->nombre : null,
+ 
+        'novedad' => $ta->novedad ? [
+    'usuario_solicitante_id' => $ta->novedad->usuario_solicitante_id,
+    'usuario_reemplazo_id'   => $ta->novedad->usuario_reemplazo_id,
+    'tipo'                  => $ta->novedad->tipo_novedad,
+    // Enviamos los objetos completos para que el pipe 'slice' de Angular no falle
+    'solicitante' => [
+        'persona' => [
+            'nombres' => $ta->novedad->solicitante->persona->nombres ?? 'N/A'
+        ]
+    ],
+    'reemplazo' => [
+        'persona' => [
+            'nombres' => $ta->novedad->reemplazo->persona->nombres ?? 'N/A'
+        ]
+    ]
+] : null
+
+
                     ];
                 })        
             ];
