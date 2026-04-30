@@ -8,6 +8,8 @@ use App\Models\Semana;
 use App\Models\Turno;
 use App\Models\Servicio;
 use App\Models\Categoria;
+use App\Models\User;          
+use App\Models\NovedadLaboral;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB; // IMPORTANTE: Para corregir el error "Class DB not found"
@@ -323,77 +325,114 @@ return response()->json([
  * 5. OBTENER EQUIPO FILTRADO (Para el frontend de Angular)
  * Filtra el personal de un servicio y opcionalmente por su categoría.
  */
+
 public function getEquipoFiltrado(Request $request)
-{
-    try {
-        $servicio_id = $request->query('servicio_id');
-        $categoria_id = $request->query('categoria_id');
-        $semana_id = $request->query('semana_id');
+    {
+        try {
+            $servicio_id = $request->query('servicio_id');
+            $categoria_id = $request->query('categoria_id');
+            $semana_id = $request->query('semana_id');
 
-        $query = \App\Models\User::whereHas('servicios', function($q) use ($servicio_id) {
-            $q->where('servicios.id', $servicio_id);
-        });
+            // 1. Obtener los usuarios del servicio/categoría
+            $query = User::whereHas('servicios', function($q) use ($servicio_id) {
+                $q->where('servicios.id', $servicio_id);
+            });
 
-        if ($categoria_id && is_numeric($categoria_id)) {
-            $query->where('categoria_id', $categoria_id);
+            if ($categoria_id && is_numeric($categoria_id)) {
+                $query->where('categoria_id', $categoria_id);
+            }
+
+            $equipo = $query->with(['persona', 'categoria', 'turnosAsignados' => function($q) use ($semana_id) {
+                $q->where('semana_id', $semana_id)
+                  ->with(['turno', 'area', 'novedad.solicitante.persona', 'novedad.reemplazo.persona']); 
+            }])->get();
+
+            // 2. Procesar cada usuario para incluir turnos donde es titular y donde es reemplazo
+            // ... después de obtener la variable $equipo ...
+
+$resultado = $equipo->map(function($user) use ($semana_id) {
+    
+    // 1. FORZAR REFRESCO: Obligamos a recargar las novedades del titular
+    // Esto asegura que Melisa vea su cuadro naranja inmediatamente después del primer cambio.
+    $user->loadMissing(['turnosAsignados.novedad.solicitante.persona', 'turnosAsignados.novedad.reemplazo.persona']);
+
+    // A. Turnos donde el usuario es el titular original (Melisa)
+    $turnosDirectos = $user->turnosAsignados->map(function($ta) {
+        // Si el usuario cambió su turno, $ta->novedad ahora tendrá datos reales
+        return $this->formatearTurno($ta, $ta->novedad);
+    });
+
+    // B. Turnos donde el usuario es el REEMPLAZO (Leni - Turnos virtuales)
+    $novedadesComoReemplazo = NovedadLaboral::where('usuario_reemplazo_id', $user->id)
+        ->whereHas('asignacion', function($q) use ($semana_id) {
+            $q->where('semana_id', $semana_id);
+        })
+        ->with(['asignacion.turno', 'asignacion.area', 'solicitante.persona', 'reemplazo.persona'])
+        ->get();
+
+    $turnosVirtuales = $novedadesComoReemplazo->map(function($nov) {
+        // Vinculamos manualmente la novedad a la asignación para el formateador
+        $asignacion = $nov->asignacion;
+        $asignacion->setRelation('novedad', $nov);
+        return $this->formatearTurno($asignacion, $nov);
+    });
+
+    // C. Combinar y priorizar novedades
+    // Usamos el ID de asignación para que, si Melisa cedió un turno, 
+    // no aparezca el original verde y el nuevo naranja al mismo tiempo.
+    $todosLosTurnos = $turnosDirectos->concat($turnosVirtuales)
+        ->unique('id_asignacion')
+        ->values();
+
+    return [
+        'usuario_id'       => $user->id,
+        'usuario_nombre'   => $user->persona ? $user->persona->nombre_completo : $user->name,
+        'categoria_nombre' => $user->categoria ? $user->categoria->nombre : 'Sin categoría',
+        'turnos'           => $todosLosTurnos
+    ];
+});
+            return response()->json([
+                'status' => 'success',
+                'equipo_visible' => $resultado
+            ], 200);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage()
+            ], 500);
         }
-
-        // --- CAMBIO AQUÍ: Agregamos 'area' en el with() ---
-        $equipo = $query->with(['persona', 'categoria', 'turnosAsignados' => function($q) use ($semana_id) {
-           
-        $q->where('semana_id', $semana_id)->with(['turno', 'area', 'novedad.solicitante.persona']); 
-        }])->get();
-
-        $resultado = $equipo->map(function($user) {
-            return [
-                'usuario_id'       => $user->id,
-                'usuario_nombre'   => $user->persona ? $user->persona->nombre_completo : $user->name,
-                'categoria_nombre' => $user->categoria ? $user->categoria->nombre : 'Sin categoría',
-                'turnos' => $user->turnosAsignados->map(function($ta) {
-                    return [
-         'id_asignacion' => $ta->id,
-        'nombre_turno'  => $ta->turno->nombre_turno,
-        // USAR DIRECTAMENTE LOS DATOS DE LA TABLA TURNOS
-        'hora_inicio'   => \Carbon\Carbon::parse($ta->turno->hora_inicio)->format('H:i'), 
-        'hora_fin'      => \Carbon\Carbon::parse($ta->turno->hora_fin)->format('H:i'),
-        'duracion_horas'=> $ta->turno->duracion_horas,
-        'fecha'         => $ta->fecha,
-        'color'         => $ta->turno->color ?? '#52600c',
-        'area_nombre'   => $ta->area ? $ta->area->nombre : null,
- 
-        'novedad' => $ta->novedad ? [
-    'usuario_solicitante_id' => $ta->novedad->usuario_solicitante_id,
-    'usuario_reemplazo_id'   => $ta->novedad->usuario_reemplazo_id,
-    'tipo'                  => $ta->novedad->tipo_novedad,
-    // Enviamos los objetos completos para que el pipe 'slice' de Angular no falle
-    'solicitante' => [
-        'persona' => [
-            'nombres' => $ta->novedad->solicitante->persona->nombres ?? 'N/A'
-        ]
-    ],
-    'reemplazo' => [
-        'persona' => [
-            'nombres' => $ta->novedad->reemplazo->persona->nombres ?? 'N/A'
-        ]
-    ]
-] : null
-
-
-                    ];
-                })        
-            ];
-        });
-
-        return response()->json([
-            'status' => 'success',
-            'equipo_visible' => $resultado
-        ], 200);
-
-    } catch (\Exception $e) {
-        return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
     }
-}
-// Agrega esto al final de tu TurnoAsignadoController
+
+    /**
+     * Helper para unificar el formato del JSON
+     */
+    private function formatearTurno($ta, $novedad) {
+        // Extraemos los nombres de la columna 'nombre_completo' vista en tu HeidiSQL
+     $nombreSolicitante = $novedad?->solicitante?->persona?->nombre_completo ?? 'N/A';
+    $nombreReemplazo = $novedad?->reemplazo?->persona?->nombre_completo ?? 'N/A';
+
+        return [
+            'id_asignacion' => $ta->id,
+            'nombre_turno'  => $ta->turno->nombre_turno,
+            'hora_inicio'   => Carbon::parse($ta->turno->hora_inicio)->format('H:i'), 
+            'hora_fin'      => Carbon::parse($ta->turno->hora_fin)->format('H:i'),
+            'duracion_horas'=> $ta->turno->duracion_horas,
+            'fecha'         => $ta->fecha,
+            // Naranja para novedades, color original para turnos normales
+            'color'         => $novedad ? '#fd7e14' : ($ta->turno->color ?? '#52600c'),
+            'area_nombre'   => $ta->area ? $ta->area->nombre : null,
+            'novedad'       => $novedad ? [
+                'usuario_solicitante_id' => $novedad->usuario_solicitante_id,
+                'usuario_reemplazo_id'   => $novedad->usuario_reemplazo_id,
+                'tipo'                   => $novedad->tipo,
+                'solicitante_nombre'     => $nombreSolicitante,
+                'reemplazo_nombre'       => $nombreReemplazo,
+            ] : null
+        ];
+    }
+
+
 public function listaCategorias()
 {
     try {
