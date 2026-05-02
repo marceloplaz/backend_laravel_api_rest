@@ -408,30 +408,35 @@ $resultado = $equipo->map(function($user) use ($semana_id) {
      * Helper para unificar el formato del JSON
      */
     private function formatearTurno($ta, $novedad) {
-        // Extraemos los nombres de la columna 'nombre_completo' vista en tu HeidiSQL
-     $nombreSolicitante = $novedad?->solicitante?->persona?->nombre_completo ?? 'N/A';
+    // Extraemos los nombres de la columna 'nombre_completo'
+    $nombreSolicitante = $novedad?->solicitante?->persona?->nombre_completo ?? 'N/A';
     $nombreReemplazo = $novedad?->reemplazo?->persona?->nombre_completo ?? 'N/A';
 
-        return [
-            'id_asignacion' => $ta->id,
-            'nombre_turno'  => $ta->turno->nombre_turno,
-            'hora_inicio'   => Carbon::parse($ta->turno->hora_inicio)->format('H:i'), 
-            'hora_fin'      => Carbon::parse($ta->turno->hora_fin)->format('H:i'),
-            'duracion_horas'=> $ta->turno->duracion_horas,
-            'fecha'         => $ta->fecha,
-            // Naranja para novedades, color original para turnos normales
-            'color'         => $novedad ? '#fd7e14' : ($ta->turno->color ?? '#52600c'),
-            'area_nombre'   => $ta->area ? $ta->area->nombre : null,
-            'novedad'       => $novedad ? [
-                'usuario_solicitante_id' => $novedad->usuario_solicitante_id,
-                'usuario_reemplazo_id'   => $novedad->usuario_reemplazo_id,
-                'tipo'                   => $novedad->tipo,
-                'solicitante_nombre'     => $nombreSolicitante,
-                'reemplazo_nombre'       => $nombreReemplazo,
-            ] : null
-        ];
-    }
+    return [
+        'id_asignacion' => $ta->id,
+        'nombre_turno'  => $ta->turno->nombre_turno,
+        'hora_inicio'   => Carbon::parse($ta->turno->hora_inicio)->format('H:i'), 
+        'hora_fin'      => Carbon::parse($ta->turno->hora_fin)->format('H:i'),
+        'duracion_horas'=> $ta->turno->duracion_horas,
+        'fecha'         => $ta->fecha,
+        'color'         => $novedad ? '#fd7e14' : ($ta->turno->color ?? '#52600c'),
 
+        // --- CAMBIO AQUÍ ---
+        // Si tiene área, muestra el nombre del área.
+        // Si no tiene área, intenta mostrar el nombre del servicio.
+        // Si por alguna razón no hay servicio, recién ahí pone 'GENERAL'.
+        'area_nombre'   => $ta->area ? $ta->area->nombre : ($ta->servicio ? $ta->servicio->nombre : 'GENERAL'),
+        // -------------------
+
+        'novedad'       => $novedad ? [
+            'usuario_solicitante_id' => $novedad->usuario_solicitante_id,
+            'usuario_reemplazo_id'   => $novedad->usuario_reemplazo_id,
+            'tipo'                   => $novedad->tipo,
+            'solicitante_nombre'     => $nombreSolicitante,
+            'reemplazo_nombre'       => $nombreReemplazo,
+        ] : null
+    ];
+}
 
 public function listaCategorias()
 {

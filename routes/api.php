@@ -23,7 +23,8 @@ Route::prefix("v1")->group(function () {
     Route::post("/auth/register", [AuthController::class, "funRegister"]);
     Route::get('buscar-profesionales', [UserController::class, 'index']); 
      Route::get('personal/exportar-pdf', [PersonaController::class, 'exportarPdf']);
-
+     Route::post('/personal/importar', [PersonaController::class, 'import']);
+     
     
     // 🔒 RUTAS PROTEGIDAS (Token Sanctum)
     Route::middleware('auth:sanctum')->group(function () {
@@ -64,6 +65,8 @@ $ROLES_TECNICO    = $ROLES_JEFATURAS  . ',responsable_tecnico';
         Route::get('reporte-semanal/{semana_id}/{usuario_id?}', [TurnoAsignadoController::class, 'reporteHorasSemana']);
           Route::get('turnos/resumen-mensual', [TurnoAsignadoController::class, 'getResumenMensual']);
         }); 
+            // Cambia /persona/ por /personal/
+
             Route::get('persona-catalogos', [PersonaController::class, 'getFormDependencies']);  
               
           

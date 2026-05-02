@@ -9,6 +9,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
 use Barryvdh\DomPDF\Facade\Pdf;
+use Maatwebsite\Excel\Facades\Excel; // <--- AÑADIR ESTA LÍNEA
+use App\Imports\PersonalImport;      // <--- AÑADIR ESTA LÍNEA
 
 class PersonaController extends Controller 
 {
@@ -200,4 +202,21 @@ public function getFormDependencies()
    $pdf = Pdf::loadView('pdf.reporte_por_categoria', compact('personal', 'titulo'));
    return $pdf->stream('reporte_personal.pdf');
     }
+
+    public function import(Request $request)
+    {
+        $request->validate([
+            'file' => 'required|mimes:xlsx,xls,csv'
+        ]);
+
+        try {
+            Excel::import(new PersonalImport, $request->file('file'));
+            return response()->json(['message' => '¡Importación exitosa!'], 200);
+        } 
+        catch (\Exception $e) {
+    // Esto te devolverá el mensaje real del error (ej: "Field 'direccion' doesn't have a default value")
+    return response()->json(['error' => $e->getMessage()], 500);
+}
+    }
+
 }

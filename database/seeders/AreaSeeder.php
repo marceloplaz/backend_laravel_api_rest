@@ -64,6 +64,7 @@ class AreaSeeder extends Seeder
         $this->cargarAreasGenericas('CIRUGIA MUJERES', ['TRAUMATOLOGIA']);
         $this->cargarAreasGenericas('CIRUGIA VARONES', ['TRAUMATOLOGIA']);
         $this->cargarAreasGenericas('MEDICINA MUJERES', ['ONCOLOGIA']);
+          $this->cargarAreasGenericas('NUTRICION', ['COMPRAS', 'ALMACEN','LIMPIEZA','PANADERIA','DIETAS','PACIENTES/MAÑANA','PACIENTES/TARDE','MEDICOS/MAÑANA','MEDICOS/TARDE','limpieza-pacientes/tarde']);
 
         // 10. SERVICIOS CON CONSULTORIOS (Se cargan vacíos para llenar luego)
         $this->cargarGineco();
@@ -124,20 +125,15 @@ class AreaSeeder extends Seeder
         }
     }
 
+   
     private function crearAreaGeneralParaTodos()
-    {
-        $servicios = Servicio::all();
-        foreach ($servicios as $s) {
-            Area::updateOrCreate(
-                [
-                    'servicio_id' => $s->id, 
-                    'nombre' => $s->nombre . ' (GENERAL)'
-                ],
-                [
-                    'activo' => true,
-                    'numero_consultorio' => null
-                ]
-            );
-        }
+{
+    $servicios = Servicio::all();
+    foreach ($servicios as $s) {
+        Area::updateOrCreate(
+            ['servicio_id' => $s->id, 'nombre' => $s->nombre], // <--- Solo el nombre del servicio
+            ['activo' => true]
+        );
     }
+}
 }
