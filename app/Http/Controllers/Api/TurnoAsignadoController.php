@@ -63,7 +63,8 @@ public function store(Request $request)
                 TurnoAsignado::updateOrCreate(
                     [
                         'usuario_id' => $request->usuario_id,
-                        'fecha'      => $fechaFormateada
+                        'fecha'      => $fechaFormateada,
+                        'turno_id'   => $request->turno_id
                     ],
                     [
                         'servicio_id' => $asignacionServicio->servicio_id,
@@ -209,24 +210,25 @@ public function reporteSemanal(Request $request, $semana_id)
     $categoria = \App\Models\Categoria::findOrFail($categoria_id);
 
     $usuarios = \App\Models\User::with([
-        'persona', 
-        'turnosAsignados' => function($q) use ($semana_id, $servicio_id) {
-            $q->where('semana_id', $semana_id)
-              ->where('servicio_id', $servicio_id)
-              ->with(['turno', 'area' ]); 
-        }
-    ])
-    ->where('categoria_id', $categoria_id)
-    ->whereHas('servicios', function($q) use ($servicio_id) {
-        $q->where('servicios.id', $servicio_id);
-    })
-    ->get();
-
+    'persona', 
+    'turnosAsignados' => function($q) use ($semana_id) {
+        // Traemos todos los turnos de la semana, sin filtrar por servicio aquí
+        $q->where('semana_id', $semana_id)
+          ->with(['turno', 'area', 'novedad', 'servicio']); 
+    }
+])
+// El filtro de abajo asegura que solo salgan los usuarios que pertenecen a este servicio
+->whereHas('servicios', function($q) use ($servicio_id) {
+    $q->where('servicios.id', $servicio_id);
+})
+->where('categoria_id', $categoria_id)
+->get();
     $data = [
         'servicio'  => $servicio,
         'categoria' => $categoria,
         'mes'       => $semana->mes->nombre,
         'periodo'   => "Semana {$semana->numero_semana} ({$semana->fecha_inicio} a {$semana->fecha_fin})",
+        'fecha_inicio_limpia' => $semana->fecha_inicio,
         'usuarios'  => $usuarios 
     ];
 
