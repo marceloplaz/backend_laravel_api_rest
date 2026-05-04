@@ -74,50 +74,73 @@
         </tr>
     </thead>
     <tbody>
-   @foreach($usuarios as $u)
-<tr>
-    <td class="col-personal">
-        <span class="nombre-p">{{ $u->persona->nombre_completo ?? $u->name }}</span>
-        <span class="cargo-p">{{ $categoria->nombre }}</span>
-    </td>
+    @foreach($usuarios as $u)
+    <tr>
+        <td class="col-personal">
+            <span class="nombre-p">{{ $u->persona->nombre_completo ?? $u->name }}</span>
+            <span class="cargo-p">{{ $categoria->nombre }}</span>
+        </td>
 
-   @for($i = 0; $i < 7; $i++)
+        @for($i = 0; $i < 7; $i++)
+            @php
+                $fechaString = \Carbon\Carbon::parse($fecha_inicio_limpia)->addDays($i)->format('Y-m-d');
+                
+                $asignacion = $u->turnosAsignados->first(function($item) use ($fechaString) {
+                    return \Carbon\Carbon::parse($item->fecha)->format('Y-m-d') === $fechaString;
+                });
+            @endphp
+
+           <td align="center">
     @php
-        // 1. Generamos el objeto fecha para el día actual de la columna
-        $fechaInstancia = \Carbon\Carbon::parse($fecha_inicio_limpia)->addDays($i);
-        $fechaString = $fechaInstancia->format('Y-m-d');
+        $fechaString = \Carbon\Carbon::parse($fecha_inicio_limpia)->addDays($i)->format('Y-m-d');
         
-        // 2. Buscamos la asignación filtrando por la fecha exacta (Y-m-d)
-        $asignacion = $u->turnosAsignados->first(function($item) use ($fechaString) {
-            // Aseguramos que comparamos solo la parte de la fecha
+        // Aquí obtenemos la COLECCIÓN de turnos del día
+        $asignacionesDelDia = $u->turnosAsignados->filter(function($item) use ($fechaString) {
             return \Carbon\Carbon::parse($item->fecha)->format('Y-m-d') === $fechaString;
         });
     @endphp
 
-    <td align="center">
-    @if($asignacion && $asignacion->turno)
-        <div class="turno-box">
-    <!-- Información principal del turno -->
-    <span class="turno-nombre">{{ $asignacion->turno->nombre_turno }}</span>
+    {{-- 1. Verificamos si la colección tiene elementos --}}
+    @if($asignacionesDelDia->isNotEmpty())
+        
+        {{-- 2. Iteramos la colección. AQUÍ es donde accedemos a cada 'turno' --}}
+        @foreach($asignacionesDelDia as $asignacion)
+            
+<div class="turno-box" style="margin-bottom: 4px;">
+    {{-- 1. AREA: Mostramos siempre el nombre del área --}}
+    <span class="turno-area">
+        {{ $asignacion->area->nombre ?? ($asignacion->servicio->nombre ?? 'GENERAL') }}
+    </span>
+
+    {{-- 2. NOMBRE DEL TURNO --}}
+    <span class="turno-nombre">
+        {{ $asignacion->turno->nombre_turno ?? 'Sin Nombre' }}
+    </span>
+
+    {{-- 3. HORARIO --}}
     <span class="turno-horas">
         {{ \Carbon\Carbon::parse($asignacion->turno->hora_inicio)->format('H:i') }} - 
         {{ \Carbon\Carbon::parse($asignacion->turno->hora_fin)->format('H:i') }}
     </span>
 
-    <!-- Etiqueta dinámica para servicios externos -->
+    {{-- 4. ETIQUETA ROJA: Solo si el turno pertenece a un SERVICIO diferente al del reporte --}}
     @if($asignacion->servicio_id != $servicio->id)
-        <div style="color: #e74c3c; font-size: 7px; font-weight: bold; margin-top: 2px; text-transform: uppercase; border-top: 0.5px solid #eee;">
-            {{ $asignacion->servicio->nombre?? 'OTRO SERVICIO' }}
+        <div style="color: #e74c3c; font-size: 6px; font-weight: bold; margin-top: 2px; border-top: 0.5px solid #ccc; padding-top: 1px; text-transform: uppercase;">
+            {{ $asignacion->servicio->nombre ?? 'EXTERNO' }}
         </div>
     @endif
 </div>
+
+
+        @endforeach
+
     @else
         <span class="vacio">-</span>
     @endif
 </td>
-@endfor
-</tr>
-@endforeach
+        @endfor
+    </tr>
+    @endforeach
 </tbody>
 </table>
 
