@@ -15,6 +15,7 @@ class Categoria extends Model
         'nivel'
     ];
 
+    
     public function users()
     {
         return $this->hasMany(User::class);

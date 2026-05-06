@@ -5,8 +5,11 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\Turno;
 use App\Models\Categoria;
+use App\Models\User;
+
 use App\Models\Servicio;
 use Illuminate\Http\Request;
+use App\Models\TurnoAsignado;
 
 class TurnoController extends Controller
 {
@@ -100,6 +103,103 @@ public function index(Request $request)
         ], 500);
     }
 }
+
+
+
+
+public function misTurnosMes(Request $request)
+{
+    // Si viene usuario_id lo usamos (Modo Admin), si no, usamos el del token
+    $usuarioId = $request->query('usuario_id') ?? auth()->id();
+    $servicioId = $request->query('servicio_id');
+    $mes = $request->query('mes');
+    $anio = $request->query('anio');
+
+    $turnos = \App\Models\TurnoAsignado::with(['turno', 'area'])
+        ->where('usuario_id', $usuarioId)
+        ->where('servicio_id', $servicioId)
+        ->whereMonth('fecha', $mes)
+        ->whereYear('fecha', $anio)
+        ->get();
+
+    $dataFormateada = $turnos->map(function ($t) {
+        return [
+            'id_asignacion' => $t->id,
+            'nombre_turno'  => $t->turno->nombre_turno,
+            'horario'       => $t->turno->hora_inicio . ' - ' . $t->turno->hora_fin,
+            'fecha'         => $t->fecha,
+            'area_nombre'   => $t->area->nombre ?? ($t->servicio->nombre ?? 'Servicio General'),
+            'color'         => $t->color ?? '#28a745'
+        ];
+    });
+
+    return response()->json(['status' => 'success', 'data' => $dataFormateada]);
+}
+
+public function buscarProfesionales(Request $request)
+{
+    $termino = $request->query('buscar');
+    
+    // Buscamos en la tabla personas y traemos su usuario_id vinculado
+    return \App\Models\Persona::where('nombre', 'LIKE', "%{$termino}%")
+        ->orWhere('apellido_paterno', 'LIKE', "%{$termino}%")
+        ->select('id', 'nombre', 'apellido_paterno', 'usuario_id')
+        ->limit(5)
+        ->get();
+}
+
+
+public function getServiciosUsuario($id)
+{
+    // 1. Cargamos al usuario con sus asignaciones, servicios y la configuración del turno (horas)
+    $usuario = User::with([
+        'turnosAsignados.servicio', 
+        'turnosAsignados.turno' // Esta relación usa la función turno() de tu modelo
+    ])->findOrFail($id);
+
+    // 2. Extraemos los servicios únicos (Lógica que ya tenías funcionando)
+    $servicios = $usuario->turnosAsignados->map(function ($ta) {
+        return $ta->servicio;
+    })->unique('id')->values();
+
+    
+
+    $turnosCalendario = $usuario->turnosAsignados->map(function ($ta) {
+    // Forzamos el formato H:i:s para limpiar cualquier fecha residual de la base de datos
+    $horaInicio = $ta->turno ? date('H:i:s', strtotime($ta->turno->hora_inicio)) : '00:00:00';
+    $horaFin = $ta->turno ? date('H:i:s', strtotime($ta->turno->hora_fin)) : '00:00:00';
+    
+    // Lógica para turnos que pasan de medianoche (Noche/Tarde-Noche)
+    $fechaFin = $ta->fecha;
+    if ($horaFin < $horaInicio) {
+        $fechaFin = date('Y-m-d', strtotime($ta->fecha . ' +1 day'));
+    }
+
+    return [
+        'id'    => $ta->id,
+        'title' => ($ta->turno->nombre_turno ?? 'Turno') . ' (' . $ta->servicio->nombre . ')',
+        'start' => $ta->fecha . 'T' . $horaInicio, // Ahora será: 2026-05-05T19:00:00
+        'end'   => $fechaFin . 'T' . $horaFin,
+        'color' => $ta->estado === 'programado' ? '#28a745' : '#ffc107'
+    ];
+});
+    
+    return response()->json([
+        'status'    => 'success',
+        'servicios' => $servicios,
+        'turnos'    => $turnosCalendario
+    ]);
+}
+
+/**
+ * Función auxiliar para dar color a los eventos según su estado
+ */
+private function getColorPorEstado($estado) {
+    return $estado === 'programado' ? '#28a745' : '#ffc107';
+}
+
+
+
 
     public function show($id)
     {

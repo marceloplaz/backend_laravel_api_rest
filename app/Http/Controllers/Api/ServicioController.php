@@ -32,6 +32,27 @@ class ServicioController extends Controller
         ]);
     }
 
+    /**
+ * Obtener los servicios vinculados al usuario para la pantalla de inicio.
+ */
+public function inicio()
+{
+    // Obtenemos el usuario autenticado (jugadordeunbit)
+    $usuario = auth()->user();
+
+    if (!$usuario) {
+        return response()->json(['message' => 'No autorizado'], 401);
+    }
+
+    // Obtenemos solo los servicios que tiene asignados mediante la relación
+    $servicios = $usuario->servicios()->get();
+
+    return response()->json([
+        'success' => true,
+        'data' => $servicios
+    ], 200);
+}
+
     public function index()
     {
         return response()->json([ 'data' => Servicio::all()  ], 200);
