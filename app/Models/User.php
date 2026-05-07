@@ -45,7 +45,8 @@ class User extends Authenticatable
         return $this->hasOne(Persona::class, 'user_id');
     }
 
-   
+
+
     // 🔷 Relación con Categoria
  
     public function categoria()
