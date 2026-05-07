@@ -119,7 +119,11 @@ public function reporteMensual(Request $request)
     }
 
     // 2. Ahora filtramos usando gestion_id
-    $turnos = \App\Models\TurnoAsignado::with(['usuario.persona', 'turno'])
+   $turnos = \App\Models\TurnoAsignado::with([
+        'usuario.persona', // <--- Debe ser así para entrar a la tabla personas
+        'turno', 
+        'area'
+    ])
         ->where('mes_id', $mesId)
         ->where('servicio_id', $servicioId)
         ->where('gestion_id', $gestion->id) // <--- Usamos el ID de la tabla gestiones
