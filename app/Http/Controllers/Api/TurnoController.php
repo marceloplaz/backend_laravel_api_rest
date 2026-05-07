@@ -105,6 +105,28 @@ public function index(Request $request)
 }
 
 
+public function reporteMensual(Request $request)
+{
+    $mesId = $request->query('mes_id');
+    $anioTexto = $request->query('gestion'); // Ejemplo: "2026"
+    $servicioId = $request->query('servicio_id');
+
+    // 1. Buscamos el ID de la gestión que coincida con el año enviado
+    $gestion = \DB::table('gestiones')->where('año', $anioTexto)->first();
+
+    if (!$gestion) {
+        return response()->json(['error' => 'Gestión no encontrada'], 404);
+    }
+
+    // 2. Ahora filtramos usando gestion_id
+    $turnos = \App\Models\TurnoAsignado::with(['usuario.persona', 'turno'])
+        ->where('mes_id', $mesId)
+        ->where('servicio_id', $servicioId)
+        ->where('gestion_id', $gestion->id) // <--- Usamos el ID de la tabla gestiones
+        ->get();
+
+    return response()->json($turnos);
+}
 
 
 public function misTurnosMes(Request $request)

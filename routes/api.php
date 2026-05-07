@@ -24,7 +24,7 @@ Route::prefix("v1")->group(function () {
     Route::get('buscar-profesionales', [UserController::class, 'index']); 
      Route::get('personal/exportar-pdf', [PersonaController::class, 'exportarPdf']);
      Route::post('/personal/importar', [PersonaController::class, 'import']);
-     
+      Route::get('reporte-mensual', [TurnoController::class, 'reporteMensual']);
      
     
     // 🔒 RUTAS PROTEGIDAS (Token Sanctum)
@@ -47,7 +47,7 @@ $ROLES_TECNICO    = $ROLES_JEFATURAS  . ',responsable_tecnico';
         Route::get('persona/{id}', [PersonaController::class, 'show']);
         Route::get('servicios/inicio', [ServicioController::class, 'inicio']);
         Route::get('turnos/mis-turnos', [TurnoController::class, 'misTurnosMes']);
-      
+    
         // --- Consultas Base del Dashboard (Accesibles para todos los logueados) ---
         Route::get("/roles", [UserController::class, "getRoles"]);
         Route::get("/categorias-lista", [TurnoAsignadoController::class, "listaCategorias"]);
@@ -57,6 +57,7 @@ $ROLES_TECNICO    = $ROLES_JEFATURAS  . ',responsable_tecnico';
         Route::get('servicios/{id}/turnos-habilitados', [ServicioTurnoController::class, 'getTurnosHabilitados']);
         Route::get("/mis-turnos", [TurnoAsignadoController::class, "misTurnos"]);
         Route::get("/equipo-filtrado", [TurnoAsignadoController::class, "getEquipoFiltrado"]);
+        
         
         Route::get('/usuarios/{id}/servicios', [TurnoController::class, 'getServiciosUsuario']);
 
