@@ -161,19 +161,42 @@ public function misTurnosMes(Request $request)
 
     return response()->json(['status' => 'success', 'data' => $dataFormateada]);
 }
-
 public function buscarProfesionales(Request $request)
 {
     $termino = $request->query('buscar');
-    
-    // Buscamos en la tabla personas y traemos su usuario_id vinculado
-    return \App\Models\Persona::where('nombre', 'LIKE', "%{$termino}%")
-        ->orWhere('apellido_paterno', 'LIKE', "%{$termino}%")
-        ->select('id', 'nombre', 'apellido_paterno', 'usuario_id')
-        ->limit(5)
-        ->get();
-}
+    $servicioId = $request->query('servicio_id');
 
+    // Agregamos 'servicios' a la carga para acceder al pivot
+    $query = \App\Models\User::query()->with(['persona', 'servicios']);
+
+    $query->whereHas('persona', function($q) use ($termino) {
+        $q->where('nombre', 'LIKE', "%{$termino}%")
+          ->orWhere('apellido_paterno', 'LIKE', "%{$termino}%");
+    });
+
+    if ($servicioId) {
+        $query->whereHas('servicios', function($q) use ($servicioId) {
+            $q->where('servicio_id', $servicioId);
+            // Si quieres que la búsqueda SOLO devuelva activos, deja la siguiente línea.
+            // Si quieres ver a todos (inactivos bloqueados), quítala.
+            $q->where('usuario_servicios.estado', 1); 
+        });
+    }
+
+    return $query->limit(5)->get()->map(function($user) use ($servicioId) {
+        // Buscamos el servicio específico en la colección del usuario para obtener su estado
+        $servicioPivot = $user->servicios->where('id', $servicioId)->first();
+
+        return [
+            'id' => $user->persona->id ?? null,
+            'nombre' => $user->persona->nombre ?? '',
+            'apellido_paterno' => $user->persona->apellido_paterno ?? '',
+            'usuario_id' => $user->id,
+            // Extraemos el estado directamente del pivot
+            'estado' => $servicioPivot ? $servicioPivot->pivot->estado : 0 
+        ];
+    });
+}
 
 public function getServiciosUsuario($id)
 {

@@ -13,5 +13,8 @@ class Gestion extends Model
     public function meses() {
         return $this->hasMany(Mes::class);
     }
+public function vacaciones() {
+    return $this->hasMany(Vacacion::class, 'gestion_id');
+}
 
 }

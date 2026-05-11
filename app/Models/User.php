@@ -33,33 +33,29 @@ class User extends Authenticatable
         ];
     }
 
-    // 🔷 Relación estructural con Roles (Muchos a Muchos)
+    //  Relación estructural con Roles (Muchos a Muchos)
     public function roles(): BelongsToMany
     {
         return $this->belongsToMany(Role::class, 'role_user')->withTimestamps();
     }
 
-    // 🔷 Relación con Persona (La tabla personas tiene el user_id)
+    // Relación con Persona (La tabla personas tiene el user_id)
     public function persona(): HasOne
     {
         return $this->hasOne(Persona::class, 'user_id');
     }
 
-
-
-    // 🔷 Relación con Categoria
+        // Relación con Categoria
  
     public function categoria()
     {
         return $this->belongsTo(Categoria::class);
     }
 
-    // 🔷 Verificación de Roles
-  // App\Models\User.php
+    
 public function hasRole(string $role): bool
 {
-    // Usamos 'exists()' para que Laravel haga una consulta REAL a la base de datos
-    // si la relación aún no ha sido cargada.
+    
     return $this->roles()
         ->where('roles.name', 'like', trim($role))
         ->exists();
@@ -77,13 +73,16 @@ public function hasRole(string $role): bool
     return $this->roles->flatMap->permissions->pluck('action')->contains($permission);
 }
 
-    // 🔷 Relación con Servicios
+    //  Relación con Servicios
     public function servicios()
     {
         return $this->belongsToMany(Servicio::class, 'usuario_servicios', 'usuario_id', 'servicio_id');
     }
 
-    // 🔷 Relación con Turnos
+    public function vacaciones() {
+    return $this->hasMany(Vacacion::class, 'usuario_id');
+}
+    //  Relación con Turnos
     public function turnos()
     {
        return $this->belongsToMany(Turno::class, 'turnos_asignados', 'usuario_id', 'turno_id')

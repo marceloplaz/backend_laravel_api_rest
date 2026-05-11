@@ -21,11 +21,16 @@ class Servicio extends Model
     public function usuarios()
     {
         return $this->belongsToMany(User::class, 'usuario_servicios', 'servicio_id', 'usuario_id')
-                    ->withPivot('id', 'descripcion_usuario_servicio', 'fecha_ingreso', 'estado');
+                    ->withPivot('estado');
     }
     public function roles()
 {
     return $this->belongsToMany(Role::class, 'role_servicio');
+}
+
+public function usuariosActivos()
+{
+    return $this->usuarios()->wherePivot('estado', 1);
 }
 
     public function turnos()
@@ -37,4 +42,7 @@ class Servicio extends Model
             'turno_id'
         );
     }
+public function vacaciones() {
+    return $this->hasMany(Vacacion::class, 'servicio_id');
 }
+    }

@@ -26,7 +26,8 @@ class ServicioResource extends JsonResource
                 'usuario_nombre' => $user->name,      // El nombre que buscamos
                 'descripcion'    => $user->pivot->descripcion_usuario_servicio,
                 'fecha_ingreso'  => $user->pivot->fecha_ingreso,
-                'estado'         => $user->pivot->estado,
+                'estado'           => (int) $user->pivot->estado,
+                'turnos'           => []
             ];
         }),
     ];

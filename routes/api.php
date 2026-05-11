@@ -15,6 +15,7 @@ use App\Http\Controllers\Api\TurnoAsignadoController;
 use App\Http\Controllers\Api\CategoriaController;
 use App\Http\Controllers\Api\IncidenciaController;
 use App\Http\Controllers\Api\NovedadLaboralController;
+use App\Http\Controllers\VacacionController;
 
 Route::prefix("v1")->group(function () {
 
@@ -25,7 +26,7 @@ Route::prefix("v1")->group(function () {
      Route::get('personal/exportar-pdf', [PersonaController::class, 'exportarPdf']);
      Route::post('/personal/importar', [PersonaController::class, 'import']);
       Route::get('reporte-mensual', [TurnoController::class, 'reporteMensual']);
-     
+     Route::post('/actualizar-estado', [ServicioController::class, 'actualizarEstadoVinculacion']);
     
     // 🔒 RUTAS PROTEGIDAS (Token Sanctum)
     Route::middleware('auth:sanctum')->group(function () {
@@ -64,6 +65,14 @@ $ROLES_TECNICO    = $ROLES_JEFATURAS  . ',responsable_tecnico';
 
         Route::get('/turnos/mis-turnos', [TurnoController::class, 'misTurnosMes']);
         
+        //vacaciones
+        Route::post('vacaciones', [VacacionController::class, 'store']);
+        Route::put('vacaciones/{id}/aprobar', [VacacionController::class, 'aprobar']);
+        Route::get('vacaciones/usuario/{id}', [VacacionController::class, 'indexByUsuario']);
+        Route::get('vacaciones/pendientes', [VacacionController::class, 'indexPendientes']);
+        Route::put('vacaciones/{id}/estado', [VacacionController::class, 'actualizarEstado']);
+
+
         // =========================================================
         // 🏥 GESTIÓN DE SERVICIOS Y PERSONAL (ROLES_JEFATURAS)
         // =========================================================
@@ -97,6 +106,8 @@ $ROLES_TECNICO    = $ROLES_JEFATURAS  . ',responsable_tecnico';
             // Configuración de turnos por servicio
             Route::prefix('servicios/{servicioId}/turnos')->group(function () {
                 Route::post('/', [ServicioTurnoController::class, 'asignar']);
+                
+                
                 Route::put('/sync', [ServicioTurnoController::class, 'sync']);
                 Route::delete('/{turnoId}', [ServicioTurnoController::class, 'quitar']);
             });

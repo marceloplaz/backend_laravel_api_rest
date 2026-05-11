@@ -37,15 +37,16 @@ class ServicioController extends Controller
  */
 public function inicio()
 {
-    // Obtenemos el usuario autenticado (jugadordeunbit)
     $usuario = auth()->user();
 
     if (!$usuario) {
         return response()->json(['message' => 'No autorizado'], 401);
     }
 
-    // Obtenemos solo los servicios que tiene asignados mediante la relación
-    $servicios = $usuario->servicios()->get();
+    // Solo obtenemos los servicios donde la vinculación del usuario esté activa
+    $servicios = $usuario->servicios()
+        ->wherePivot('estado', 1)
+        ->get();
 
     return response()->json([
         'success' => true,
@@ -64,11 +65,13 @@ public function inicio()
         return response()->json([ 'message' => 'Servicio creado correctamente','data' => $servicio
         ], 201);
     }
-    public function show($id)
-    {
-         $servicio = Servicio::with('usuarios')->findOrFail($id);
-         return new ServicioResource($servicio);
-    }
+    
+public function show($id)
+{
+    // NO uses wherePivot('estado', 1) aquí, para que aparezcan los inactivos y puedas reactivarlos
+    $servicio = Servicio::with('usuarios.persona')->findOrFail($id);
+    return new ServicioResource($servicio);
+}
 
     // ACTUALIZAR
     public function update(ServicioUpdateRequest $request, $id)
@@ -79,6 +82,31 @@ public function inicio()
 
     // Aquí usas tu ServicioResource para devolver la respuesta limpia
     return new ServicioResource($servicio);
+}
+
+public function actualizarEstadoVinculacion(Request $request)
+{
+    try {
+        // Validamos los datos entrantes
+        $request->validate([
+            'usuario_id' => 'required',
+            'servicio_id' => 'required',
+            'estado' => 'required|in:0,1'
+        ]);
+
+        // Buscamos el servicio
+        $servicio = Servicio::findOrFail($request->servicio_id);
+
+        // Actualizamos el estado en la tabla pivote usando updateExistingPivot
+        $servicio->usuarios()->updateExistingPivot($request->usuario_id, [
+            'estado' => $request->estado
+        ]);
+
+        return response()->json(['message' => 'Estado actualizado con éxito']);
+
+    } catch (\Exception $e) {
+        return response()->json(['error' => $e->getMessage()], 500);
+    }
 }
 
     // ELIMINAR

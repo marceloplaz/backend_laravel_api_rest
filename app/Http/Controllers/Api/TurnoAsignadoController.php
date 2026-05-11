@@ -337,8 +337,9 @@ public function getEquipoFiltrado(Request $request)
 
             // 1. Obtener los usuarios del servicio/categoría
             $query = User::whereHas('servicios', function($q) use ($servicio_id) {
-                $q->where('servicios.id', $servicio_id);
-            });
+            $q->where('servicios.id', $servicio_id)
+              ->where('usuario_servicios.estado', 1); // Solo personal ACTIVO en este servicio
+        });
 
             if ($categoria_id && is_numeric($categoria_id)) {
                 $query->where('categoria_id', $categoria_id);
