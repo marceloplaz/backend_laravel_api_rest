@@ -1,12 +1,14 @@
 <?php
-
-namespace App\Http\Controllers;
-
+namespace App\Http\Controllers\Api;
+use App\Http\Controllers\Controller;
 use App\Models\Vacacion;
 use App\Models\UsuarioServicio;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use App\Models\User; 
+use App\Models\Gestion; 
+use App\Models\Categoria;
 
 class VacacionController extends Controller
 {
@@ -45,6 +47,7 @@ public function indexPendientes()
     $pendientes = Vacacion::with([
             'user.persona', // Nombre del solicitante
             'servicio',     // Servicio al que pertenece
+            'user.categoria',
             'gestion'       // Gestión (año) de la vacación
         ])
         ->where('estado', Vacacion::ESTADO_SIN_ASIGNAR)
@@ -59,74 +62,76 @@ public function indexPendientes()
      */
    
     public function store(Request $request)
-    {
-        $request->validate([
-            'usuario_id'    => 'required|exists:users,id',
-            'servicio_id'   => 'required|exists:servicios,id',
-            'gestion_id'    => 'required|exists:gestiones,id',
-            'fecha_inicio'  => 'required|date',
-            'fecha_fin'     => 'required|date|after_or_equal:fecha_inicio',
-            'motivo_tipo'   => 'required|string',
-            'periodo_desde' => 'required|date',
-            'periodo_hasta' => 'required|date',
-        ]);
+{
+    $request->validate([
+        'usuario_id'    => 'required|exists:users,id',
+        'servicio_id'   => 'required|exists:servicios,id',
+        'gestion_id'    => 'required|exists:gestiones,id',
+        'fecha_inicio'  => 'required|date',
+        'fecha_fin'     => 'required|date|after_or_equal:fecha_inicio',
+        'motivo_tipo'   => 'required|string',
+        'periodo_desde' => 'required|date',
+        'periodo_hasta' => 'required|date',
+    ]);
 
-        // 1. Calcular días solicitados usando Carbon
-        $inicio = Carbon::parse($request->fecha_inicio);
-        $fin = Carbon::parse($request->fecha_fin);
-        $diasPedidios = $inicio->diffInDays($fin) + 1; // Incluimos el día inicial
+    // 1. Obtener al usuario (IMPORTANTE: Esto faltaba)
+    $user = User::findOrFail($request->usuario_id);
 
-        // 2. Obtener la fecha de ingreso de la tabla intermedia usuario_servicios
-        $asignacion = UsuarioServicio::where('usuario_id', $request->usuario_id)
-            ->where('servicio_id', $request->servicio_id)
-            ->first();
+    // 2. Calcular días solicitados
+    $inicio = Carbon::parse($request->fecha_inicio);
+    $fin = Carbon::parse($request->fecha_fin);
+    $diasPedidios = $inicio->diffInDays($fin) + 1;
 
-        if (!$asignacion) {
-            return response()->json(['message' => 'El usuario no está asignado a este servicio'], 422);
-        }
+    // 3. Obtener asignación del servicio
+    $asignacion = UsuarioServicio::where('usuario_id', $request->usuario_id)
+        ->where('servicio_id', $request->servicio_id)
+        ->first();
 
-        // 3. Lógica de Saldo: Buscar la última vacación aprobada para saber el saldo restante
-        $ultimaVacacion = Vacacion::where('usuario_id', $request->usuario_id)
-            ->where('gestion_id', $request->gestion_id)
-            ->where('estado', Vacacion::ESTADO_ASIGNADO)
-            ->orderBy('id', 'desc')
-            ->first();
-
-        // Si no hay vacaciones previas en esta gestión, el saldo inicial es el total_dias_derecho
-        // (Este valor podrías enviarlo desde el frontend o tener una tabla de saldos por gestión)
-        $totalDerecho = $request->total_dias_derecho ?? 15; 
-        $saldoAnterior = $ultimaVacacion ? $ultimaVacacion->saldo_restante : $totalDerecho;
-
-        if ($diasPedidios > $saldoAnterior) {
-            return response()->json(['message' => 'Saldo insuficiente. Días disponibles: ' . $saldoAnterior], 400);
-        }
-
-        // 4. Crear el registro en estado "Sin asignar" (0)
-        $vacacion = Vacacion::create([
-            'usuario_id'                => $request->usuario_id,
-            'servicio_id'               => $request->servicio_id,
-            'gestion_id'                => $request->gestion_id,
-            'fecha_ingreso_institucion' => $asignacion->fecha_ingreso,
-            'periodo_desde'             => $request->periodo_desde,
-            'periodo_hasta'             => $request->periodo_hasta,
-            'total_dias_derecho'        => $totalDerecho,
-            'dias_consumidos'           => $diasPedidios,
-            'saldo_restante'            => $saldoAnterior - $diasPedidios,
-            'fecha_inicio'              => $request->fecha_inicio,
-            'fecha_fin'                 => $request->fecha_fin,
-            'dias_solicitados'          => $diasPedidios,
-            'es_permiso_a_cuenta'       => $request->es_permiso_a_cuenta ?? false,
-            'motivo_tipo'               => $request->motivo_tipo,
-            'motivo_detalle'            => $request->motivo_detalle,
-            'estado'                    => Vacacion::ESTADO_SIN_ASIGNAR,
-        ]);
-
-        return response()->json([
-            'message' => 'Solicitud registrada con éxito',
-            'data' => $vacacion
-        ], 201);
+    if (!$asignacion) {
+        return response()->json(['message' => 'El usuario no está asignado a este servicio'], 422);
     }
 
+    // 4. Lógica de Saldo
+    $ultimaVacacion = Vacacion::where('usuario_id', $request->usuario_id)
+        ->where('gestion_id', $request->gestion_id)
+        ->where('estado', Vacacion::ESTADO_ASIGNADO)
+        ->orderBy('id', 'desc')
+        ->first();
+
+    // Si no hay previa, usamos el total_dias_derecho enviado o 15 por defecto
+    $totalDerecho = $request->total_dias_derecho ?? 15; 
+    $saldoAnterior = $ultimaVacacion ? $ultimaVacacion->saldo_restante : $totalDerecho;
+
+    if ($diasPedidios > $saldoAnterior) {
+        return response()->json(['message' => 'Saldo insuficiente. Días disponibles: ' . $saldoAnterior], 400);
+    }
+
+    // 5. Crear el registro (Ahora $user ya existe)
+    $vacacion = Vacacion::create([
+        'usuario_id'                => $request->usuario_id,
+        'servicio_id'               => $request->servicio_id,
+        'gestion_id'                => $request->gestion_id,
+        'categoria_id'              => $user->categoria_id, // <--- Ahora funcionará
+        'fecha_ingreso_institucion' => $asignacion->fecha_ingreso,
+        'periodo_desde'             => $request->periodo_desde,
+        'periodo_hasta'             => $request->periodo_hasta,
+        'total_dias_derecho'        => $totalDerecho,
+        'dias_consumidos'           => $diasPedidios,
+        'saldo_restante'            => $saldoAnterior - $diasPedidios,
+        'fecha_inicio'              => $request->fecha_inicio,
+        'fecha_fin'                 => $request->fecha_fin,
+        'dias_solicitados'          => $diasPedidios,
+        'permiso_cuenta'       => $request->permiso_cuenta ?? false,
+        'motivo_tipo'               => $request->motivo_tipo,
+        'motivo_detalle'            => $request->motivo_detalle,
+        'estado'                    => Vacacion::ESTADO_SIN_ASIGNAR,
+    ]);
+
+    return response()->json([
+        'message' => 'Solicitud registrada con éxito',
+        'data' => $vacacion
+    ], 201);
+}
     /**
      * Aprobar una vacación y registrar quién lo hizo.
      */
@@ -149,15 +154,18 @@ public function indexPendientes()
 /**
  * Actualiza el estado de una solicitud (Aprobar o Rechazar).
  * El saldo se calcula y descuenta ÚNICAMENTE si la solicitud es aprobada.
+ /**
+ * Actualiza el estado de una solicitud (Aprobar o Rechazar).
+ * Ahora incluye la relación de categoría en la respuesta para Angular.
  */
 public function actualizarEstado(Request $request, $id)
 {
     $request->validate([
-        'estado' => 'required|in:0,1,2,3', //0:Sin asignar,  1: Asignado (Aprobado), 2: Rechazado
+        'estado' => 'required|in:0,1,2,3', // 0:Sin asignar, 1: Asignado (Aprobado), 2: Rechazado
         'observaciones' => 'required_if:estado,2|nullable|string|max:500',
     ]);
 
-    // Cargamos la vacación con su relación de gestión para tener el contexto
+    // Cargamos la vacación con su relación de gestión
     $vacacion = Vacacion::findOrFail($id);
 
     // 1. Evitar doble procesamiento
@@ -171,30 +179,29 @@ public function actualizarEstado(Request $request, $id)
     // 2. Lógica si el Administrador presiona "APROBAR"
     if ($nuevoEstado === Vacacion::ESTADO_ASIGNADO) {
         
-        // Buscamos la última vacación APROBADA del usuario en esta misma gestión para saber su saldo real actual
+        // Buscamos la última vacación APROBADA del usuario en esta misma gestión
         $ultimaAprobada = Vacacion::where('usuario_id', $vacacion->usuario_id)
             ->where('gestion_id', $vacacion->gestion_id)
             ->where('estado', Vacacion::ESTADO_ASIGNADO)
             ->orderBy('id', 'desc')
             ->first();
 
-        // El saldo base es: lo que quedó de la última aprobada O el total_dias_derecho si es la primera
+        // El saldo base es lo que quedó de la última aprobada o el total_dias_derecho inicial
         $saldoBaseActual = $ultimaAprobada ? $ultimaAprobada->saldo_restante : $vacacion->total_dias_derecho;
 
-        // Validación de último momento: ¿Aún tiene días suficientes?
+        // Validación de seguridad
         if ($vacacion->dias_consumidos > $saldoBaseActual) {
             return response()->json([
                 'message' => "No se puede aprobar. El usuario solo tiene {$saldoBaseActual} días disponibles."
             ], 400);
         }
 
-        // Calculamos el nuevo saldo
+        // Calculamos el nuevo saldo para este registro
         $vacacion->saldo_restante = $saldoBaseActual - $vacacion->dias_consumidos;
         $mensaje = 'Solicitud aprobada y saldo actualizado correctamente.';
     } 
     else {
         // 3. Lógica si el Administrador presiona "RECHAZAR"
-        // El saldo_restante se queda como está en el registro (el saldo base sin restar)
         $mensaje = 'Solicitud rechazada.';
     }
 
@@ -204,9 +211,69 @@ public function actualizarEstado(Request $request, $id)
     $vacacion->observaciones = $request->observaciones;
     $vacacion->save();
 
+    // 5. IMPORTANTE: Retornamos con la relación 'categoria' para que Angular la muestre
     return response()->json([
         'message' => $mensaje,
-        'data' => $vacacion->load(['user.persona', 'aprobador.persona', 'servicio'])
+        'data' => $vacacion->load([
+            'user.persona', 
+            'categoria',        // <--- NUEVA RELACIÓN CARGADA
+            'aprobador.persona', 
+            'servicio',
+            'gestion'
+        ])
+    ]);
+}
+
+/**
+ * Inicializa los registros de vacaciones para todo el personal real.
+ * Ejecuta esto una vez (vía ruta) para llenar la base de datos con los saldos iniciales.
+ */
+ public function inicializarPersonalReal()
+{
+    $gestion = Gestion::where('año', 2026)->first(); 
+
+    if (!$gestion) {
+        return response()->json(['res' => false, 'mensaje' => 'Gestión 2026 no encontrada.'], 404);
+    }
+
+    $usuarios = User::with('persona')->get();
+    $contador = 0;
+
+    foreach ($usuarios as $user) {
+    if (!$user->persona || !$user->persona->fecha_ingreso_institucion) {
+        continue; 
+    }
+
+    Vacacion::updateOrCreate(
+        ['usuario_id' => $user->id, 'gestion_id' => $gestion->id],
+        [
+            'servicio_id'               => $user->servicio_id ?? 1,
+            'categoria_id'              => $user->categoria_id,
+            'fecha_ingreso_institucion' => $user->persona->fecha_ingreso_institucion,
+            
+            // Periodos de la gestión
+            'periodo_desde'             => '2025-01-01', 
+            'periodo_hasta'             => '2025-12-31',
+
+            // CAMPOS QUE FALTABAN (Usamos la fecha actual como marcador de posición)
+            'fecha_inicio'              => now(), 
+            'fecha_fin'                 => now(),
+            'dias_solicitados'          => 0,
+
+            'total_dias_derecho'        => 20,
+            'dias_consumidos'           => 0,
+            'saldo_restante'            => 20,
+            'estado'                    => 1, 
+            'motivo_tipo'               => 'OTRO', 
+            'motivo_detalle'            => 'LLENADO DE DATOS INICIAL'
+        ]
+    );
+    $contador++;
+}
+
+    return response()->json([
+        'res' => true, 
+        'mensaje' => "Sincronización completada. Se procesaron $contador profesionales con datos válidos."
     ]);
 }
 }

@@ -20,7 +20,9 @@ class Vacacion extends Model
 
     protected $fillable = [
         'usuario_id',               // FK a users
+        'categoria_id',
         'servicio_id',              // FK a servicios
+        'categoria_id',
         'gestion_id',               // FK a gestiones
         'fecha_ingreso_institucion',
         'periodo_desde',
@@ -59,6 +61,10 @@ class Vacacion extends Model
         return $this->belongsTo(User::class, 'usuario_id');
     }
 
+    public function categoria()
+{
+    return $this->belongsTo(Categoria::class, 'categoria_id');
+}
     /**
      * El servicio relacionado.
      */

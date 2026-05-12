@@ -15,7 +15,7 @@ use App\Http\Controllers\Api\TurnoAsignadoController;
 use App\Http\Controllers\Api\CategoriaController;
 use App\Http\Controllers\Api\IncidenciaController;
 use App\Http\Controllers\Api\NovedadLaboralController;
-use App\Http\Controllers\VacacionController;
+use App\Http\Controllers\Api\VacacionController;
 
 Route::prefix("v1")->group(function () {
 
@@ -27,7 +27,7 @@ Route::prefix("v1")->group(function () {
      Route::post('/personal/importar', [PersonaController::class, 'import']);
       Route::get('reporte-mensual', [TurnoController::class, 'reporteMensual']);
      Route::post('/actualizar-estado', [ServicioController::class, 'actualizarEstadoVinculacion']);
-    
+    Route::post('vacaciones/inicializar-personal', [VacacionController::class, 'inicializarPersonalReal']); 
     // 🔒 RUTAS PROTEGIDAS (Token Sanctum)
     Route::middleware('auth:sanctum')->group(function () {
 
@@ -65,14 +65,15 @@ $ROLES_TECNICO    = $ROLES_JEFATURAS  . ',responsable_tecnico';
 
         Route::get('/turnos/mis-turnos', [TurnoController::class, 'misTurnosMes']);
         
-        //vacaciones
-        Route::post('vacaciones', [VacacionController::class, 'store']);
-        Route::put('vacaciones/{id}/aprobar', [VacacionController::class, 'aprobar']);
-        Route::get('vacaciones/usuario/{id}', [VacacionController::class, 'indexByUsuario']);
-        Route::get('vacaciones/pendientes', [VacacionController::class, 'indexPendientes']);
-        Route::put('vacaciones/{id}/estado', [VacacionController::class, 'actualizarEstado']);
+        // 1. Primero las rutas estáticas (Sin IDs)
+Route::get('vacaciones/pendientes', [VacacionController::class, 'indexPendientes']);
 
 
+// 2. Luego las rutas con parámetros
+Route::post('vacaciones', [VacacionController::class, 'store']);
+Route::get('vacaciones/usuario/{id}', [VacacionController::class, 'indexByUsuario']);
+Route::put('vacaciones/{id}/aprobar', [VacacionController::class, 'aprobar']);
+Route::put('vacaciones/{id}/estado', [VacacionController::class, 'actualizarEstado']);
         // =========================================================
         // 🏥 GESTIÓN DE SERVICIOS Y PERSONAL (ROLES_JEFATURAS)
         // =========================================================

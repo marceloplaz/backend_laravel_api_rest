@@ -19,6 +19,13 @@ Accept: application/json
     "password": "plaz5011070"
 }
 ### Cambiar Contraseña Inicial
+
+### Inicializar el personal y los saldos de vacaciones
+GET http://localhost:8000/api/vacaciones/inicializar-personal
+Authorization: Bearer 626|JKMI3h9QYxgjlXs3ynOpmi4bCy4y2ADLYy2v551pdf582ea9
+Accept: application/json
+Content-Type: application/json
+
 PUT http://localhost:8000/api/v1/auth/change-password
 Authorization: Bearer 12|nQ4GJ7zm9hV6TLSTdopX15xnGAs9GmErBGtALReH5440a6de
 Content-Type: application/json

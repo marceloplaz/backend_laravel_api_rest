@@ -19,6 +19,7 @@ class Persona extends Model
         'tipo_trabajador',
         'nacionalidad',
         'tipo_salario',
+        'fecha_ingreso_institucion',
         'numero_tipo_salario',
         'user_id'
     ];
