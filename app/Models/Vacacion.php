@@ -37,7 +37,7 @@ class Vacacion extends Model
         'motivo_tipo',
         'motivo_detalle',
         'estado',
-        'aprobado_por',             // FK a users (quien firma)
+        'aprobado_por',             // FK a users 
         'observaciones',
     ];
 
@@ -51,7 +51,7 @@ class Vacacion extends Model
         'estado'                    => 'integer',
     ];
 
-    // --- RELACIONES ESTRUCTURALES ---
+    
 
     /**
      * El profesional (User) que solicita la vacación.

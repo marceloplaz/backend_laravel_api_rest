@@ -19,12 +19,33 @@ Accept: application/json
     "password": "plaz5011070"
 }
 ### Cambiar Contraseña Inicial
+POST http://localhost:8000/api/v1/vacaciones
+Authorization: Bearer 628|stO7bablikI3vVdB66eSEvQdxqmfGbcfV6jyRvbw11060f6b
+Content-Type: application/json
+Accept: application/json
+
+{
+    "usuario_id": 1,
+    "servicio_id": 1,
+    "gestion_id": 1,
+    "fecha_inicio": "2026-06-01",
+    "fecha_fin": "2026-06-05",
+    "motivo_tipo": "VACACION_PROGRAMADA",
+    "motivo_detalle": "Prueba de registro",
+    "periodo_desde": "2025-01-01",
+    "periodo_hasta": "2025-12-31",
+    "total_dias_derecho": 20
+}
 
 ### Inicializar el personal y los saldos de vacaciones
-GET http://localhost:8000/api/vacaciones/inicializar-personal
-Authorization: Bearer 626|JKMI3h9QYxgjlXs3ynOpmi4bCy4y2ADLYy2v551pdf582ea9
-Accept: application/json
+POST http://localhost:8000/api/v1/vacaciones/inicializar-personal
+Authorization: Bearer 628|stO7bablikI3vVdB66eSEvQdxqmfGbcfV6jyRvbw11060f6b
 Content-Type: application/json
+Accept: application/json
+
+{}
+
+
 
 PUT http://localhost:8000/api/v1/auth/change-password
 Authorization: Bearer 12|nQ4GJ7zm9hV6TLSTdopX15xnGAs9GmErBGtALReH5440a6de

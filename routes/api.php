@@ -29,6 +29,15 @@ Route::prefix("v1")->group(function () {
      Route::post('/actualizar-estado', [ServicioController::class, 'actualizarEstadoVinculacion']);
     Route::post('vacaciones/inicializar-personal', [VacacionController::class, 'inicializarPersonalReal']); 
     // 🔒 RUTAS PROTEGIDAS (Token Sanctum)
+   Route::get('vacaciones/pendientes', [VacacionController::class, 'indexPendientes']);
+    Route::get('gestiones', function() {
+        return response()->json(\App\Models\Gestion::all());
+    });
+    
+    // Si quieres usar los controladores existentes:
+    Route::get('servicios-lista', [ServicioController::class, 'index']); 
+    Route::get('categorias-lista', [CategoriaController::class, 'index']);
+
     Route::middleware('auth:sanctum')->group(function () {
 
         // Definición de grupos de acceso (Sincronizado con Angular)
@@ -66,7 +75,7 @@ $ROLES_TECNICO    = $ROLES_JEFATURAS  . ',responsable_tecnico';
         Route::get('/turnos/mis-turnos', [TurnoController::class, 'misTurnosMes']);
         
         // 1. Primero las rutas estáticas (Sin IDs)
-Route::get('vacaciones/pendientes', [VacacionController::class, 'indexPendientes']);
+
 
 
 // 2. Luego las rutas con parámetros

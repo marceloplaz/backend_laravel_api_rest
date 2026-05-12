@@ -161,68 +161,65 @@ public function indexPendientes()
 public function actualizarEstado(Request $request, $id)
 {
     $request->validate([
-        'estado' => 'required|in:0,1,2,3', // 0:Sin asignar, 1: Asignado (Aprobado), 2: Rechazado
-        'observaciones' => 'required_if:estado,2|nullable|string|max:500',
+        'estado' => 'required|in:1,2', // 1: Aprobar, 2: Rechazar
+        'dias_solicitados' => 'required_if:estado,1|numeric',
+        'observaciones' => 'nullable|string|max:500',
     ]);
 
-    // Cargamos la vacación con su relación de gestión
     $vacacion = Vacacion::findOrFail($id);
 
-    // 1. Evitar doble procesamiento
     if ($vacacion->estado != Vacacion::ESTADO_SIN_ASIGNAR) {
-        return response()->json(['message' => 'Esta solicitud ya ha sido procesada previamente.'], 422);
+        return response()->json(['message' => 'Esta solicitud ya fue procesada.'], 422);
     }
 
     $nuevoEstado = (int)$request->estado;
-    $aprobadorId = auth()->id();
 
-    // 2. Lógica si el Administrador presiona "APROBAR"
     if ($nuevoEstado === Vacacion::ESTADO_ASIGNADO) {
-        
-        // Buscamos la última vacación APROBADA del usuario en esta misma gestión
-        $ultimaAprobada = Vacacion::where('usuario_id', $vacacion->usuario_id)
+        // 1. Calcular Antigüedad y Días de Derecho (image_d2f034.png)
+        $fechaIngreso = Carbon::parse($vacacion->fecha_ingreso_institucion);
+        $antiguedad = $fechaIngreso->diffInYears(Carbon::now());
+
+        if ($antiguedad >= 1 && $antiguedad < 5) $totalDerecho = 15;
+        elseif ($antiguedad >= 5 && $antiguedad < 10) $totalDerecho = 20;
+        elseif ($antiguedad >= 10) $totalDerecho = 30;
+        else $totalDerecho = 0;
+
+        // 2. Buscar saldo previo de la última vacación aprobada en la misma gestión
+        $ultima = Vacacion::where('usuario_id', $vacacion->usuario_id)
             ->where('gestion_id', $vacacion->gestion_id)
             ->where('estado', Vacacion::ESTADO_ASIGNADO)
             ->orderBy('id', 'desc')
             ->first();
 
-        // El saldo base es lo que quedó de la última aprobada o el total_dias_derecho inicial
-        $saldoBaseActual = $ultimaAprobada ? $ultimaAprobada->saldo_restante : $vacacion->total_dias_derecho;
+        $saldoBase = $ultima ? $ultima->saldo_restante : $totalDerecho;
 
-        // Validación de seguridad
-        if ($vacacion->dias_consumidos > $saldoBaseActual) {
-            return response()->json([
-                'message' => "No se puede aprobar. El usuario solo tiene {$saldoBaseActual} días disponibles."
-            ], 400);
+        // 3. Validar y descontar
+        $diasAConsumir = $request->dias_solicitados;
+        if ($diasAConsumir > $saldoBase) {
+            return response()->json(['message' => "Saldo insuficiente. Disponible: $saldoBase"], 400);
         }
 
-        // Calculamos el nuevo saldo para este registro
-        $vacacion->saldo_restante = $saldoBaseActual - $vacacion->dias_consumidos;
-        $mensaje = 'Solicitud aprobada y saldo actualizado correctamente.';
-    } 
-    else {
-        // 3. Lógica si el Administrador presiona "RECHAZAR"
-        $mensaje = 'Solicitud rechazada.';
+        $vacacion->total_dias_derecho = $totalDerecho;
+        $vacacion->dias_consumidos = $diasAConsumir;
+        $vacacion->saldo_restante = $saldoBase - $diasAConsumir;
+        $vacacion->permiso_cuenta = 1; // Se activa al aprobar
     }
 
-    // 4. Actualizamos campos comunes y guardamos
     $vacacion->estado = $nuevoEstado;
-    $vacacion->aprobado_por = $aprobadorId;
+    $vacacion->aprobado_por = auth()->id(); // El admin logueado
     $vacacion->observaciones = $request->observaciones;
     $vacacion->save();
 
-    // 5. IMPORTANTE: Retornamos con la relación 'categoria' para que Angular la muestre
     return response()->json([
-        'message' => $mensaje,
-        'data' => $vacacion->load([
-            'user.persona', 
-            'categoria',        // <--- NUEVA RELACIÓN CARGADA
-            'aprobador.persona', 
-            'servicio',
-            'gestion'
-        ])
+        'message' => $nuevoEstado === 1 ? 'Aprobada y saldo actualizado' : 'Rechazada',
+        'data' => $vacacion->load(['user.persona', 'servicio', 'gestion'])
     ]);
 }
+
+
+
+
+
 
 /**
  * Inicializa los registros de vacaciones para todo el personal real.
