@@ -38,23 +38,31 @@ public function indexByUsuario($id)
         'historial' => $vacaciones
     ]);
 }
-/**
- * Lista todas las solicitudes pendientes para el administrador.
- */
+
+
 public function indexPendientes()
 {
-    // Cargamos relaciones necesarias para la tabla de administración
-    $pendientes = Vacacion::with([
-            'user.persona', // Nombre del solicitante
-            'servicio',     // Servicio al que pertenece
-            'user.categoria',
-            'gestion'       // Gestión (año) de la vacación
+    $pendientes = Vacacion::query()
+        ->with([
+            'user' => function($query) {
+                // DEBEMOS incluir 'id' para que persona pueda colgarse de aquí
+                $query->select('id', 'name', 'categoria_id');
+            },
+            // DEBEMOS incluir 'user_id' para que Laravel sepa a qué usuario pertenece esta persona
+            'user.persona:id,user_id,nombre_completo,fecha_ingreso_institucion', 
+            'servicio:id,nombre',
+            'user.categoria:id,nombre',
+            'gestion:id,año'
         ])
         ->where('estado', Vacacion::ESTADO_SIN_ASIGNAR)
-        ->orderBy('created_at', 'asc') // Las más antiguas primero para atender por orden
+        ->orderBy('created_at', 'asc')
         ->get();
 
-    return response()->json($pendientes);
+    return response()->json([
+        'success' => true,
+        'data' => $pendientes,
+        'count' => $pendientes->count()
+    ]);
 }
 
 /**
