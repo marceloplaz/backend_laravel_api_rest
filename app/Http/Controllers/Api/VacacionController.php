@@ -281,4 +281,31 @@ public function actualizarEstado(Request $request, $id)
         'mensaje' => "Sincronización completada. Se procesaron $contador profesionales con datos válidos."
     ]);
 }
+// para el recibir las fechas de inicio y fin mediante un  calendario 
+public function programarFechas(Request $request, $id)
+{
+    $vacacion = Vacacion::findOrFail($id);
+
+    // Validamos que vengan las fechas
+    $request->validate([
+        'fecha_inicio' => 'required|date',
+        'fecha_fin'    => 'required|date|after_or_equal:fecha_inicio',
+    ]);
+
+    // Calculamos los días solicitados automáticamente
+    $inicio = \Carbon\Carbon::parse($request->fecha_inicio);
+    $fin = \Carbon\Carbon::parse($request->fecha_fin);
+    $dias = $inicio->diffInDays($fin) + 1; // +1 para incluir el día inicial
+
+    $vacacion->update([
+        'fecha_inicio'     => $request->fecha_inicio,
+        'fecha_fin'        => $request->fecha_fin,
+        'dias_solicitados' => $dias,
+        'saldo_restante'   => $vacacion->total_dias_derecho - ($vacacion->dias_consumidos + $dias),
+        'motivo_tipo'      => 'VACACION_PROGRAMADA'
+    ]);
+
+    return response()->json(['res' => true, 'mensaje' => 'Fechas programadas con éxito']);
+}
+
 }

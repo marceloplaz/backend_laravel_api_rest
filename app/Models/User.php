@@ -92,4 +92,8 @@ public function hasRole(string $role): bool
     public function turnosAsignados() {
     return $this->hasMany(TurnoAsignado::class, 'usuario_id');
 }
+public function kardexVacaciones(): HasMany
+{
+    return $this->hasMany(KardexVacacion::class, 'user_id');
+}
 }

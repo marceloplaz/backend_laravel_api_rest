@@ -29,4 +29,8 @@ class Persona extends Model
     {
         return $this->belongsTo(User::class);
     }
+    public function kardexVacaciones(): HasMany
+{
+    return $this->hasMany(KardexVacacion::class, 'user_id');
+}
 }

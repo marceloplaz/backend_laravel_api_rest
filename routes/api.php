@@ -14,9 +14,9 @@ use App\Http\Controllers\Api\UserController;
 use App\Http\Controllers\Api\TurnoAsignadoController;
 use App\Http\Controllers\Api\CategoriaController;
 use App\Http\Controllers\Api\IncidenciaController;
-use App\Http\Controllers\Api\NovedadLaboralController;
 use App\Http\Controllers\Api\VacacionController;
-
+use App\Http\Controllers\Api\NovedadLaboralController;
+use App\Http\Controllers\Api\KardexVacacionController;
 Route::prefix("v1")->group(function () {
 
     // 🔓 RUTAS PÚBLICAS
@@ -28,9 +28,26 @@ Route::prefix("v1")->group(function () {
       Route::get('reporte-mensual', [TurnoController::class, 'reporteMensual']);
      Route::post('/actualizar-estado', [ServicioController::class, 'actualizarEstadoVinculacion']);
     Route::post('vacaciones/inicializar-personal', [VacacionController::class, 'inicializarPersonalReal']); 
+    Route::put('vacaciones/programar/{id}', [VacacionController::class, 'programarFechas']);
     // 🔒 RUTAS PROTEGIDAS (Token Sanctum)
    Route::get('vacaciones/pendientes', [VacacionController::class, 'indexPendientes']);
-    Route::get('gestiones', function() {
+   
+    Route::prefix('vacaciones/kardex')->group(function () {
+        Route::get('historial/{user_id}', [KardexVacacionController::class, 'mostrarHistorial']);
+        
+        // POST: api/v1/vacaciones/kardex
+        Route::post('/', [KardexVacacionController::class, 'store']);
+        
+        // PUT: api/v1/vacaciones/kardex/{id}
+        Route::put('{id}', [KardexVacacionController::class, 'update']);
+        
+        // DELETE: api/v1/vacaciones/kardex/{id}
+        Route::delete('{id}', [KardexVacacionController::class, 'destroy']);
+   
+
+  });
+
+   Route::get('gestiones', function() {
         return response()->json(\App\Models\Gestion::all());
     });
     

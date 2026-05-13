@@ -16,5 +16,8 @@ class Gestion extends Model
 public function vacaciones() {
     return $this->hasMany(Vacacion::class, 'gestion_id');
 }
-
+public function kardexVacaciones(): HasMany
+{
+    return $this->hasMany(KardexVacacion::class, 'user_id');
+}
 }
