@@ -11,16 +11,15 @@ use App\Models\Gestion;
 use App\Models\Categoria;
 
 class VacacionController extends Controller
-{
-   
-
+{  
 
 /**
  * Obtiene el historial de vacaciones y permisos de un usuario específico.
  */
 public function indexByUsuario($id)
 {
-    // Usamos Eager Loading para traer los nombres de la persona, servicio y gestión
+ 
+// Usamos Eager Loading para traer los nombres de la persona, servicio y gestión
     // Esto evita el problema de las N+1 consultas
     $vacaciones = Vacacion::with(['servicio', 'gestion', 'aprobador.persona'])
         ->where('usuario_id', $id)
@@ -312,6 +311,32 @@ public function programarFechas(Request $request, $id)
     ]);
 
     return response()->json(['res' => true, 'mensaje' => 'Fechas programadas con éxito']);
+}
+
+public function persistirGestiones()
+{
+    // Buscamos solo las que tienen NULL en la base de datos
+    $vacaciones = \App\Models\Vacacion::whereNull('gestiones_cumplidas')->get();
+    $cont = 0;
+
+    foreach ($vacaciones as $v) {
+        $gestionKardex = \DB::table('kardex_vacaciones')
+            ->where('user_id', $v->usuario_id) // 'user_id' según tu HeidiSQL
+            ->orderBy('id', 'asc')
+            ->value('gestiones_cumplidas');
+
+        if ($gestionKardex) {
+            // Esto actualiza la tabla 'vacaciones' físicamente
+            $v->gestiones_cumplidas = $gestionKardex;
+            $v->save();
+            $cont++;
+        }
+    }
+
+    return response()->json([
+        'message' => 'Sincronización completada con éxito',
+        'registros_actualizados' => $totalActualizados
+    ], 200);
 }
 
 }
