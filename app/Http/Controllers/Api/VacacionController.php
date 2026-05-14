@@ -99,6 +99,11 @@ public function indexPendientes()
         return response()->json(['message' => 'El usuario no está asignado a este servicio'], 422);
     }
 
+$kardex = \DB::table('kardex_vacaciones')
+    ->where('user_id', $request->usuario_id) // 'user_id' es el nombre real en la tabla
+    ->where('saldo_dias', '>', 0)
+    ->orderBy('gestiones_cumplidas', 'asc')
+    ->first();
     // 4. Lógica de Saldo
     $ultimaVacacion = Vacacion::where('usuario_id', $request->usuario_id)
         ->where('gestion_id', $request->gestion_id)
@@ -123,6 +128,7 @@ public function indexPendientes()
         'fecha_ingreso_institucion' => $asignacion->fecha_ingreso,
         'periodo_desde'             => $request->periodo_desde,
         'periodo_hasta'             => $request->periodo_hasta,
+        'gestiones_cumplidas'       => $kardex ? $kardex->gestiones_cumplidas : 'Sin Gestión', 
         'total_dias_derecho'        => $totalDerecho,
         'dias_consumidos'           => $diasPedidios,
         'saldo_restante'            => $saldoAnterior - $diasPedidios,

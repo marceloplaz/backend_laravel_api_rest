@@ -12,6 +12,7 @@ class Vacacion extends Model
 
     // Nombre de la tabla en plural como definimos en la migración
     protected $table = 'vacaciones';
+    protected $appends = ['gestiones_cumplidas']; // Fuerza a que siempre aparezca en el JSON
 
     // Constantes para los estados (0: Sin asignar, 1: Asignado, 2: Rechazado)
     const ESTADO_SIN_ASIGNAR = 0;
@@ -27,6 +28,7 @@ class Vacacion extends Model
         'fecha_ingreso_institucion',
         'periodo_desde',
         'periodo_hasta',
+        'gestiones_cumplidas',
         'total_dias_derecho',
         'dias_consumidos',
         'saldo_restante',
@@ -45,6 +47,7 @@ class Vacacion extends Model
         'fecha_ingreso_institucion' => 'date',
         'periodo_desde'             => 'date',
         'periodo_hasta'             => 'date',
+        'gestiones_cumplidas'       => 'string',         
         'fecha_inicio'              => 'date',
         'fecha_fin'                 => 'date',
         'es_permiso_a_cuenta'       => 'boolean',
@@ -82,6 +85,7 @@ class Vacacion extends Model
             'id',      // FK en users
             'user_id', // FK en personas
             'usuario_id', // Local key en vacaciones
+            
             'id'       // Local key en users
         );
     }
@@ -100,4 +104,19 @@ class Vacacion extends Model
     {
         return $this->belongsTo(User::class, 'aprobado_por');
     }
+
+public function getGestionesCumplidasAttribute($value)
+{
+    // Si la vacación ya tiene guardada la gestión, la usamos directamente
+    if (!empty($value)) {
+        return $value;
+    }
+
+    // El error indica que 'saldo_dias' NO existe. 
+    // Cámbialo por el nombre correcto (comúnmente 'saldo' en tu sistema)
+   return \DB::table('kardex_vacaciones')
+        ->where('user_id', $this->usuario_id) // 'user_id' es el nombre en tu DB
+        ->orderBy('id', 'desc')               // Traemos el último registro
+        ->value('gestiones_cumplidas') ?? 'Sin Gestión';
+}
 }
