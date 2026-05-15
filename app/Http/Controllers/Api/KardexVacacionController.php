@@ -13,43 +13,76 @@ class KardexVacacionController extends Controller
      * Guarda un nuevo registro o actualiza uno existente en la Tarjeta de Control.
      */
     public function store(Request $request)
-    {
-        $request->validate([
-            'user_id'             => 'required|exists:users,id',
-            'gestiones_cumplidas' => 'required|string', // Ej: 2021-2022
-            'cas_calificacion'    => 'required|integer', 
-            'dias_derecho'        => 'required|integer',
-        ]);
+{
+    $request->validate([
+        'user_id'     => 'required|exists:users,id',
+        'tipo'        => 'required|in:INGRESO,SALIDA',
+        'gestion_id'  => 'required|exists:gestiones,id',
+        'servicio_id' => 'required',
+    ]);
 
-        // Realizamos el cálculo matemático para el saldo inicial de esta fila
-        $cas = (int) $request->cas_calificacion;
-        $derecho = (int) $request->dias_derecho;
-        $saldoInicial = $cas + $derecho;
+    return DB::transaction(function () use ($request) {
+        
+        // 1. Obtener saldo actual bloqueando la fila para seguridad
+        $ultimoMovimiento = KardexVacacion::where('user_id', $request->user_id)
+                            ->orderBy('id', 'desc')
+                            ->lockForUpdate()
+                            ->first();
+                            
+        $saldoAnterior = $ultimoMovimiento ? (int)$ultimoMovimiento->saldo_restante : 0;
 
-        $kardex = KardexVacacion::updateOrCreate(
-            ['id' => $request->id], // Si envías el ID desde Angular, se edita el registro
-            [
-                'user_id'             => $request->user_id,
-                'gestion_id'          => $request->gestion_id,
-                'servicio_id'         => $request->servicio_id,
-                'gestiones_cumplidas' => $request->gestiones_cumplidas,
-                'cas_calificacion'    => $cas,
-                'dias_derecho'        => $derecho,
-                'saldo_restante'      => $saldoInicial, 
-                'descripcion'         => $request->descripcion,
-                'fecha_inicio'        => $request->fecha_inicio ?? now(),
-                'fecha_fin'           => $request->fecha_fin ?? now(),
-                'dias_solicitados'    => 0,
-                'estado'              => 1, // Pendiente/Activo
-            ]
-        );
+        $kardex = new KardexVacacion();
+        $kardex->user_id     = $request->user_id;
+        $kardex->tipo         = $request->tipo; // Asegúrate de que esté en el $fillable del modelo
+        $kardex->servicio_id = $request->servicio_id;
+        $kardex->gestion_id  = $request->gestion_id;
+
+        if ($request->tipo === 'INGRESO') {
+            // Lógica de Ingreso
+            $kardex->gestiones_cumplidas = $request->gestiones_cumplidas;
+            $kardex->cas_calificacion    = (int)$request->cas_calificacion;
+            $kardex->dias_derecho        = (int)$request->dias_derecho;
+            $kardex->dias_solicitados    = 0;
+            
+            // IMPORTANTE: Ponemos fechas en null ya que es un ingreso administrativo
+            $kardex->fecha_inicio = null;
+            $kardex->fecha_fin    = null;
+
+            $kardex->saldo_restante = $saldoAnterior + $kardex->cas_calificacion + $kardex->dias_derecho;
+            $kardex->descripcion    = $request->descripcion ?? "Carga de Gestión {$request->gestiones_cumplidas}";
+        } 
+        else {
+            // Lógica de Salida (Resta)
+            $diasAPermitir = (int)$request->dias_solicitados;
+
+            if ($saldoAnterior < $diasAPermitir) {
+                return response()->json([
+                    'res' => false,
+                    'mensaje' => "Saldo insuficiente. El personal solo tiene {$saldoAnterior} días disponibles."
+                ], 422);
+            }
+
+            $kardex->gestiones_cumplidas = "USO DE VACACIÓN";
+            $kardex->dias_solicitados    = $diasAPermitir;
+            $kardex->cas_calificacion    = 0;
+            $kardex->dias_derecho        = 0;
+            
+            $kardex->saldo_restante = $saldoAnterior - $diasAPermitir;
+            $kardex->fecha_inicio   = $request->fecha_inicio;
+            $kardex->fecha_fin      = $request->fecha_fin;
+            $kardex->descripcion    = $request->descripcion ?? "Salida programada";
+        }
+
+        $kardex->estado = 1;
+        $kardex->save();
 
         return response()->json([
             'res' => true,
-            'mensaje' => 'Registro de Kardex guardado correctamente',
+            'mensaje' => 'Registro procesado exitosamente',
             'data' => $kardex
         ]);
-    }
+    });
+}
 
     /**
      * Obtiene todo el historial de un usuario específico para mostrar en el modal.

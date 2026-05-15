@@ -18,6 +18,6 @@ public function vacaciones() {
 }
 public function kardexVacaciones(): HasMany
 {
-    return $this->hasMany(KardexVacacion::class, 'user_id');
+    return $this->hasMany(KardexVacacion::class, 'gestion_id');
 }
 }

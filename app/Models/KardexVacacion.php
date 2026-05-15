@@ -16,6 +16,7 @@ class KardexVacacion extends Model
 
 
     'user_id',
+    'tipo',
         'gestion_id',
         'servicio_id',
         'gestiones_cumplidas',
