@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\KardexVacacion;
+use App\Models\Vacacion;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
@@ -68,19 +69,39 @@ class KardexVacacionController extends Controller
             $kardex->dias_derecho        = 0;
             
             $kardex->saldo_restante = $saldoAnterior - $diasAPermitir;
-            $kardex->fecha_inicio   = $request->fecha_inicio;
-            $kardex->fecha_fin      = $request->fecha_fin;
+            
+            $kardex->fecha_inicio    = $request->fecha_inicio;
+            $kardex->fecha_fin       = $request->fecha_fin;
+            $kardex->fecha_retorno   = $request->fecha_retorno;
+            $kardex->fecha_solicitud = $request->fecha_solicitud;
+
             $kardex->descripcion    = $request->descripcion ?? "Salida programada";
         }
 
         $kardex->estado = 1;
         $kardex->save();
 
-        return response()->json([
-            'res' => true,
-            'mensaje' => 'Registro procesado exitosamente',
-            'data' => $kardex
+        
+            
+ if ($kardex->tipo === 'SALIDA') {
+    $vacacionPrincipal = Vacacion::where('usuario_id', $kardex->usuario_id)->first();
+
+    if ($vacacionPrincipal) {
+        $vacacionPrincipal->update([
+            'fecha_inicio'    => $kardex->fecha_inicio,
+            'fecha_fin'       => $kardex->fecha_fin,
+            // Importante: Restamos los días solicitados del saldo_total
+            // Asegúrate de que el campo en tu tabla 'vacaciones' se llame 'saldo_total'
+            'saldo_total'     => $vacacionPrincipal->saldo_total - $kardex->dias_solicitados,
         ]);
+    }
+}
+
+return response()->json([
+    'res' => true,
+    'mensaje' => 'Registro procesado y saldo actualizado con éxito',
+    'data' => $kardex
+]);
     });
 }
 
