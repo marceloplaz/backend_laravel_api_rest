@@ -44,10 +44,12 @@ class KardexVacacionController extends Controller
             $kardex->cas_calificacion    = (int)$request->cas_calificacion;
             $kardex->dias_derecho        = (int)$request->dias_derecho;
             $kardex->dias_solicitados    = 0;
-            
+            $kardex->fecha_solicitud     = $request->fecha_solicitud;
+
             // IMPORTANTE: Ponemos fechas en null ya que es un ingreso administrativo
             $kardex->fecha_inicio = null;
             $kardex->fecha_fin    = null;
+            $kardex->fecha_retorno       = null;
 
             $kardex->saldo_restante = $saldoAnterior + $kardex->cas_calificacion + $kardex->dias_derecho;
             $kardex->descripcion    = $request->descripcion ?? "Carga de Gestión {$request->gestiones_cumplidas}";
