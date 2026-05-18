@@ -113,7 +113,7 @@ return response()->json([
 public function mostrarHistorial($user_id)
 {
     // Obtenemos todos los campos del kardex para este usuario específico
-    $historial = KardexVacacion::with(['gestion', 'servicio'])
+    $historial = KardexVacacion::with(['gestion', 'servicio','user.persona'])
         ->where('user_id', $user_id)
         ->orderBy('gestiones_cumplidas', 'desc')
         ->get();

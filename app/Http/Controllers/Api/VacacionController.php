@@ -13,9 +13,39 @@ use App\Models\Categoria;
 class VacacionController extends Controller
 {  
 
+
+/**
+ * Obtiene el listado completo de vacaciones sin importar su estado.
+ * Ideal para el historial general, búsquedas globales y reprocesamiento.
+ */
+public function indexGeneral()
+{
+    $vacaciones = Vacacion::query()
+        ->with([
+            'user' => function($query) {
+                $query->select('id', 'name', 'categoria_id');
+            },
+            'user.persona:id,user_id,nombre_completo,fecha_ingreso_institucion', 
+            'servicio:id,nombre',
+            'user.categoria:id,nombre',
+            'gestion:id,año'
+        ])
+        ->orderBy('created_at', 'desc') // Muestra los movimientos más recientes primero
+        ->get();
+
+    return response()->json([
+        'success' => true,
+        'data' => $vacaciones,
+        'count' => $vacaciones->count()
+    ]);
+}
+
+
 /**
  * Obtiene el historial de vacaciones y permisos de un usuario específico.
  */
+
+
 public function indexByUsuario($id)
 {
  
@@ -171,24 +201,25 @@ $kardex = \DB::table('kardex_vacaciones')
  * Actualiza el estado de una solicitud (Aprobar o Rechazar).
  * Ahora incluye la relación de categoría en la respuesta para Angular.
  */
+/**
+ * Actualiza el estado de una solicitud (0: Sin asignar, 1: Asignado, 2: Rechazado).
+ * Habilita de manera dinámica la carga de motivos, observaciones y el aprobador.
+ */
 public function actualizarEstado(Request $request, $id)
 {
     $request->validate([
-        'estado' => 'required|in:1,2', // 1: Aprobar, 2: Rechazar
-        'dias_solicitados' => 'required_if:estado,1|numeric',
-        'observaciones' => 'nullable|string|max:500',
+        'estado'           => 'required|in:0,1,2', // 0: Sin asignar, 1: Asignado, 2: Rechazado
+        'dias_solicitados' => 'required_if:estado,1|numeric|min:0',
+        'motivo_tipo'      => 'required_if:estado,1|required_if:estado,2|in:VACACION_PROGRAMADA,SALUD,TRAMITE,FAMILIAR,PARTICULAR,OTRO',
+        'observaciones'    => 'required_if:estado,1|required_if:estado,2|string|max:500',
     ]);
 
     $vacacion = Vacacion::findOrFail($id);
-
-    if ($vacacion->estado != Vacacion::ESTADO_SIN_ASIGNAR) {
-        return response()->json(['message' => 'Esta solicitud ya fue procesada.'], 422);
-    }
-
     $nuevoEstado = (int)$request->estado;
 
-    if ($nuevoEstado === Vacacion::ESTADO_ASIGNADO) {
-        // 1. Calcular Antigüedad y Días de Derecho (image_d2f034.png)
+    // CASO 1: LA SOLICITUD SE APRUEBA (ESTADO 1: ASIGNADO)
+    if ($nuevoEstado === 1) {
+        // 1. Calcular Antigüedad y Días de Derecho en base a la fecha de ingreso
         $fechaIngreso = Carbon::parse($vacacion->fecha_ingreso_institucion);
         $antiguedad = $fechaIngreso->diffInYears(Carbon::now());
 
@@ -197,41 +228,67 @@ public function actualizarEstado(Request $request, $id)
         elseif ($antiguedad >= 10) $totalDerecho = 30;
         else $totalDerecho = 0;
 
-        // 2. Buscar saldo previo de la última vacación aprobada en la misma gestión
+        // 2. Buscar saldo previo de la última vacación asignada de este usuario en la misma gestión
         $ultima = Vacacion::where('usuario_id', $vacacion->usuario_id)
             ->where('gestion_id', $vacacion->gestion_id)
-            ->where('estado', Vacacion::ESTADO_ASIGNADO)
+            ->where('estado', 1)
+            ->where('id', '!=', $vacacion->id)
             ->orderBy('id', 'desc')
             ->first();
 
         $saldoBase = $ultima ? $ultima->saldo_restante : $totalDerecho;
+        $diasAConsumir = (int)$request->dias_solicitados;
 
-        // 3. Validar y descontar
-        $diasAConsumir = $request->dias_solicitados;
+        // Validar que el saldo no quede en negativo si no está permitido
         if ($diasAConsumir > $saldoBase) {
-            return response()->json(['message' => "Saldo insuficiente. Disponible: $saldoBase"], 400);
+            return response()->json(['message' => "Saldo insuficiente en el sistema. Disponible: $saldoBase"], 400);
         }
 
+        // Seteamos los valores calculados
         $vacacion->total_dias_derecho = $totalDerecho;
-        $vacacion->dias_consumidos = $diasAConsumir;
-        $vacacion->saldo_restante = $saldoBase - $diasAConsumir;
-        $vacacion->permiso_cuenta = 1; // Se activa al aprobar
+        $vacacion->dias_consumidos    = $diasAConsumir;
+        $vacacion->saldo_restante     = $saldoBase - $diasAConsumir;
+        $vacacion->dias_solicitados   = $diasAConsumir;
+        $vacacion->motivo_tipo        = $request->motivo_tipo;
+        $vacacion->observaciones      = $request->observaciones;
+        $vacacion->aprobado_por       = auth()->id(); // Estampa el ID de tu Admin/SuperAdmin logueado
+        $vacacion->permiso_cuenta     = 1;            // Se activa el control de Kardex
+
+    // CASO 2: LA SOLICITUD SE RECHAZA (ESTADO 2: RECHAZADO)
+    } elseif ($nuevoEstado === 2) {
+        $vacacion->motivo_tipo   = $request->motivo_tipo;
+        $vacacion->observaciones = $request->observaciones;
+        $vacacion->aprobado_por   = auth()->id(); // Guarda quién ejecutó el rechazo
+        $vacacion->permiso_cuenta = 0;            // No se activa en kardex
+
+    // CASO 3: RETORNAR A "SIN ASIGNAR" (ESTADO 0)
+    } else {
+        $vacacion->motivo_tipo   = 'OTRO';
+        $vacacion->observaciones = null;
+        $vacacion->aprobado_por   = null; // Se limpia el aprobador al quedar pendiente
+        $vacacion->permiso_cuenta = 0;
     }
 
     $vacacion->estado = $nuevoEstado;
-    $vacacion->aprobado_por = auth()->id(); // El admin logueado
-    $vacacion->observaciones = $request->observaciones;
-    $vacacion->save();
+    $vacacion->save(); // 'created_at' se mantiene intacto, 'updated_at' se actualiza automáticamente
 
     return response()->json([
-        'message' => $nuevoEstado === 1 ? 'Aprobada y saldo actualizado' : 'Rechazada',
-        'data' => $vacacion->load(['user.persona', 'servicio', 'gestion'])
+        'success' => true,
+        'message' => $this->obtenerMensajeEstado($nuevoEstado),
+        'data'    => $vacacion->load(['user.persona', 'servicio', 'gestion'])
     ]);
 }
 
-
-
-
+/**
+ * Función auxiliar para renderizar los mensajes de respuesta del servidor.
+ */
+private function obtenerMensajeEstado($estado) {
+    switch ($estado) {
+        case 1: return 'Solicitud asignada y aprobada con éxito.';
+        case 2: return 'Solicitud marcada como Rechazada.';
+        default: return 'Solicitud restablecida a Sin Asignar.';
+    }
+}
 
 
 /**
