@@ -100,10 +100,13 @@ class Vacacion extends Model
     /**
      * El usuario que aprueba el registro (usualmente un Jefe o Admin).
      */
-    public function aprobador(): BelongsTo
-    {
-        return $this->belongsTo(User::class, 'aprobado_por');
-    }
+ // En tu archivo app/Models/Vacacion.php
+
+public function aprobador()
+{
+ 
+    return $this->belongsTo(User::class, 'aprobado_por');
+}
 
 public function getGestionesCumplidasAttribute($value)
 {
