@@ -396,5 +396,59 @@ public function persistirGestiones()
     ], 200);
 }
 
+/**
+ * 🚀 NUEVO MÉTODO OPTIMIZADO: Obtiene el saldo de vacaciones calculado 
+ * de todo el personal en una única consulta HTTP (Elimina el bucle de Angular).
+ */
+public function obtenerSaldosMasivos()
+{
+    // 1. Usamos Eager Loading para traer los usuarios con su información de golpe
+    $usuarios = User::with([
+        'persona:id,user_id,nombre_completo,fecha_ingreso_institucion',
+        'categoria:id,nombre'
+    ])->get();
+
+    // 2. Traemos de la base de datos la última vacación aprobada de cada usuario para la gestión actual (2026)
+    // Agrupamos en memoria para cruzar datos al instante sin tocar MySQL en bucle
+    $ultimosMovimientos = Vacacion::where('estado', 1) // 1: Asignado / Aprobado
+        ->orderBy('id', 'desc')
+        ->get()
+        ->groupBy('usuario_id');
+
+    $resultado = $usuarios->map(function($user) use ($ultimosMovimientos) {
+        // Si el usuario no tiene una persona física asociada, lo saltamos de forma segura
+        if (!$user->persona) {
+            return null;
+        }
+
+        // Buscamos si tiene movimientos de vacaciones registrados
+        $movimientosUsuario = $ultimosMovimientos->get($user->id);
+        $ultimaVacacion = $movimientosUsuario ? $movimientosUsuario->first() : null;
+
+        // Calculamos los días totales consumidos en el año por el trabajador
+        $diasConsumidosTotal = $movimientosUsuario ? $movimientosUsuario->sum('dias_consumidos') : 0;
+
+        return [
+            'usuario_id'          => $user->id,
+            'nombre_completo'     => strtoupper($user->persona->nombre_completo),
+            'fecha_ingreso'       => $user->persona->fecha_ingreso_institucion ?? 'Sin Fecha',
+            'categoria'           => $user->categoria->nombre ?? 'Sin Categoría',
+            'gestiones_cumplidas' => $ultimaVacacion ? $ultimaVacacion->gestiones_cumplidas : '0',
+            
+            // Mapeo dinámico de saldos extraídos de tu última fila de control
+            'dias_derecho'        => $ultimaVacacion ? $ultimaVacacion->total_dias_derecho : 15,
+            'dias_consumidos'     => $diasConsumidosTotal,
+            'saldo_restante'      => $ultimaVacacion ? $ultimaVacacion->saldo_restante : 15,
+        ];
+    })->filter()->values(); // Filtramos registros nulos y reindexamos el array
+
+    return response()->json([
+        'success' => true,
+        'count'   => $resultado->count(),
+        'data'    => $resultado
+    ], 200);
+}
+
+
 
 }

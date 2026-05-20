@@ -28,12 +28,16 @@ Route::prefix("v1")->group(function () {
       Route::get('reporte-mensual', [TurnoController::class, 'reporteMensual']);
      Route::post('/actualizar-estado', [ServicioController::class, 'actualizarEstadoVinculacion']);
 
+
+    Route::get('vacaciones/saldos-masivos', [VacacionController::class, 'obtenerSaldosMasivos']);
      Route::post('vacaciones/inicializar-personal', [VacacionController::class, 'inicializarPersonalReal']); 
     Route::put('vacaciones/programar/{id}', [VacacionController::class, 'programarFechas']);
 
-   Route::get('vacaciones/pendientes', [VacacionController::class, 'indexPendientes']);
+
+    Route::get('vacaciones/pendientes', [VacacionController::class, 'indexPendientes']);
    Route::get('vacaciones/general', [VacacionController::class, 'indexGeneral']);    
-Route::get('vacaciones/usuario/{id}', [VacacionController::class, 'indexByUsuario']);
+
+   Route::get('vacaciones/usuario/{id}', [VacacionController::class, 'indexByUsuario']);
 Route::put('vacaciones/{id}/aprobar', [VacacionController::class, 'aprobar']);
 Route::put('vacaciones/{id}/estado', [VacacionController::class, 'actualizarEstado']); // 🌟 ¡Ahora sí existirá aquí!
 
