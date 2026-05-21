@@ -550,85 +550,98 @@ public function vaciarMes(Request $request)
 }
 
 public function rotarPersonalPorMes(Request $request)
-    {
-        $servicioId = $request->servicio_id;
-        $mesOrigenId = $request->mes_id;
-        $mesDestinoId = $request->mes_destino;
+{
+    $servicioId = $request->servicio_id;
+    $mesOrigenId = $request->mes_id;
+    $mesDestinoId = $request->mes_destino;
+    
+    // Año que viene desde Angular (ej: 2026)
+    $anoDestino = $request->input('gestion_destino_id'); 
+    $usuariosSeleccionados = $request->input('usuarios_ids', []);
 
-        // 1. Obtener personal único para el mapa circular
-        $usuarios = DB::table('turnos_asignados')
-            ->where('servicio_id', $servicioId)
-            ->where('mes_id', $mesOrigenId)
-            ->distinct()
-            ->pluck('usuario_id')
-            ->toArray();
-
-        if (count($usuarios) < 2) {
-            return response()->json(['status' => 'error', 'message' => 'Mínimo 2 personas.'], 400);
+    // --- CORRECCIÓN DE LLAVE FORÁNEA USANDO LA COLUMNA 'año' ---
+    $gestionIdReal = null;
+    if ($anoDestino) {
+        // Buscamos usando el nombre exacto de la columna 'año' visto en HeidiSQL
+        $gestion = DB::table('gestiones')->where('año', $anoDestino)->first(); 
+        
+        if ($gestion) {
+            $gestionIdReal = $gestion->id; // Para 2026 esto obtendrá correctamente el ID: 1
         }
+    }
 
-        $mapaRotacion = [];
+    // El mapa circular se arma con los IDs del modal
+    $usuarios = array_unique(array_filter($usuariosSeleccionados));
+
+    $mapaRotacion = [];
+    if (count($usuarios) >= 2) {
+        $usuarios = array_values($usuarios); 
         for ($i = 0; $i < count($usuarios); $i++) {
             $indiceSiguiente = ($i + 1) % count($usuarios);
             $mapaRotacion[$usuarios[$i]] = $usuarios[$indiceSiguiente];
         }
+    }
 
-        DB::beginTransaction();
-        try {
-            // 2. Limpiar mes destino
-            DB::table('turnos_asignados')
-                ->where('servicio_id', $servicioId)
+    DB::beginTransaction();
+    try {
+        // 2. Limpiar mes destino para evitar duplicados
+        DB::table('turnos_asignados')
+            ->where('servicio_id', $servicioId)
+            ->where('mes_id', $mesDestinoId)
+            ->delete();
+
+        // 3. Obtener turnos de origen
+        $turnosOrigen = DB::table('turnos_asignados')
+            ->where('servicio_id', $servicioId)
+            ->where('mes_id', $mesOrigenId)
+            ->get();
+
+        foreach ($turnosOrigen as $turno) {
+            
+            // Si el dueño del turno está en la rueda, rota. Si no (como Sulma), se queda con su ID original.
+            $nuevoUsuarioId = array_key_exists($turno->usuario_id, $mapaRotacion) 
+                ? $mapaRotacion[$turno->usuario_id] 
+                : $turno->usuario_id; 
+            
+            $infoSemanaOrigen = DB::table('semanas')->where('id', $turno->semana_id)->first();
+            if (!$infoSemanaOrigen) continue;
+
+            $diaDeLaSemana = Carbon::parse($turno->fecha)->dayOfWeek;
+
+            $semanaDestino = DB::table('semanas')
                 ->where('mes_id', $mesDestinoId)
-                ->delete();
+                ->where('numero_semana', $infoSemanaOrigen->numero_semana)
+                ->first();
 
-            // 3. Obtener turnos de origen
-            $turnosOrigen = DB::table('turnos_asignados')
-                ->where('servicio_id', $servicioId)
-                ->where('mes_id', $mesOrigenId)
-                ->get();
+            if ($semanaDestino) {
+                $nuevaFecha = Carbon::parse($semanaDestino->fecha_inicio)->addDays(
+                    ($diaDeLaSemana == 0 ? 6 : $diaDeLaSemana - 1)
+                );
 
-            foreach ($turnosOrigen as $turno) {
-                $nuevoUsuarioId = $mapaRotacion[$turno->usuario_id];
-                
-                // --- LÓGICA DE COINCIDENCIA SEMANAL ---
-                // Obtenemos qué número de semana (1, 2, 3...) y qué día (lunes, martes...) es
-                $infoSemanaOrigen = DB::table('semanas')->where('id', $turno->semana_id)->first();
-                $diaDeLaSemana = Carbon::parse($turno->fecha)->dayOfWeek; // 0 (dom) a 6 (sab)
+                // Si encontramos la gestión correspondiente al año usamos su ID, de lo contrario hereda la del origen
+                $finalGestionId = $gestionIdReal ? $gestionIdReal : $turno->gestion_id;
 
-                // Buscamos la semana equivalente en el mes de destino
-                // Ejemplo: Si era Semana 2 de Marzo, buscamos Semana 2 de Abril
-                $semanaDestino = DB::table('semanas')
-                    ->where('mes_id', $mesDestinoId)
-                    ->where('numero_semana', $infoSemanaOrigen->numero_semana)
-                    ->first();
-
-                if ($semanaDestino) {
-                    // Calculamos la fecha exacta del mismo día en la nueva semana
-                    $nuevaFecha = Carbon::parse($semanaDestino->fecha_inicio)->addDays(
-                        ($diaDeLaSemana == 0 ? 6 : $diaDeLaSemana - 1) // Ajuste para que Lunes sea 0
-                    );
-
-                    DB::table('turnos_asignados')->insert([
-                        'usuario_id'  => $nuevoUsuarioId,
-                        'servicio_id' => $servicioId,
-                        'turno_id'    => $turno->turno_id,
-                        'mes_id'      => $mesDestinoId,
-                        'semana_id'   => $semanaDestino->id,
-                        'gestion_id'  => $turno->gestion_id,
-                        'fecha'       => $nuevaFecha->toDateString(),
-                        'estado'      => 'programado',
-                        'created_at'  => now(),
-                        'updated_at'  => now()
-                    ]);
-                }
+                DB::table('turnos_asignados')->insert([
+                    'usuario_id'  => $nuevoUsuarioId,
+                    'servicio_id' => $servicioId,
+                    'turno_id'    => $turno->turno_id,
+                    'mes_id'      => $mesDestinoId,
+                    'semana_id'   => $semanaDestino->id,
+                    'gestion_id'  => $finalGestionId, // <-- Ahora sí inserta el ID relacional (1) en vez de 2026
+                    'fecha'       => $nuevaFecha->toDateString(),
+                    'estado'      => 'programado',
+                    'created_at'  => now(),
+                    'updated_at'  => now()
+                ]);
             }
+        }
 
-            DB::commit();
-            return response()->json(['status' => 'success', 'message' => 'Rotación lógica completada.']);
+        DB::commit();
+        return response()->json(['status' => 'success', 'message' => 'Rotación completada exitosamente.']);
 
-        } catch (\Exception $e) {
-            DB::rollBack();
-            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
+    } catch (\Exception $e) {
+        DB::rollBack();
+        return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
     }
 }
 
