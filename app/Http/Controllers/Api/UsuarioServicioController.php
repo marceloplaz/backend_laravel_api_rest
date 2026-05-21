@@ -85,4 +85,24 @@ class UsuarioServicioController extends Controller
 
         return response()->json(['message' => 'Registro eliminado'], 200);
     }
+
+public function destroyByRelation($servicio_id, $usuario_id)
+    {
+        $vinculo = UsuarioServicio::where('servicio_id', $servicio_id)
+                                  ->where('usuario_id', $usuario_id)
+                                  ->first();
+
+        if (!$vinculo) {
+            return response()->json([
+                'message' => 'No se encontró la vinculación del usuario con este servicio.'
+            ], 404);
+        }
+
+        $vinculo->delete();
+
+        return response()->json([
+            'message' => 'Usuario desvinculado del servicio exitosamente'
+        ], 200);
+    }
+
 }

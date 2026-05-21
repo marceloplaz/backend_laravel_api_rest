@@ -134,6 +134,9 @@ Route::put('vacaciones/{id}/estado', [VacacionController::class, 'actualizarEsta
             Route::apiResource('servicios', ServicioController::class); 
 
             Route::get('areas', [ServicioController::class, 'getAreas']);
+          
+  Route::delete('usuario-servicio/servicio/{servicio_id}/usuario/{usuario_id}', [UsuarioServicioController::class, 'destroyByRelation']);
+          
             Route::apiResource('usuario-servicio', UsuarioServicioController::class);
 
             Route::apiResource('persona', PersonaController::class);
