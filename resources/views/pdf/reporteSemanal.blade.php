@@ -19,9 +19,14 @@
         .main-table td { border: 1px solid #e0e0e0; padding: 5px; vertical-align: middle; height: 45px; }
 
         /* Celda del Personal */
-        .col-personal { text-align: left; width: 220px; padding-left: 8px !important; }
+        .col-personal { text-align: left; width: 180px; padding-left: 8px !important; }
         .nombre-p { font-weight: bold; color: #333; text-transform: uppercase; font-size: 9px; display: block; }
-        .cargo-p { color: #00bfa5; font-size: 8px; font-weight: bold; }
+        .cargo-p { color: #757575; font-size: 8px; display: block; margin-top: 1px; }
+        .salario-p { color: #00796b; font-size: 8px; font-weight: bold; text-transform: uppercase; display: block; margin-top: 1px; }
+
+        /* Columnas de Totales */
+        .col-totales { width: 45px; text-align: center; font-weight: bold; font-size: 9px; }
+        .horas-txt { color: #0288d1; } /* Azul para destacar las horas calculadas */
 
         /* Cuadro de Turno */
         .turno-box {
@@ -31,6 +36,7 @@
             padding: 4px 2px;
             text-align: center;
         }
+        .turno-area { color: #555; font-size: 7px; font-weight: bold; display: block; margin-bottom: 1px; }
         .turno-nombre { 
             color: #00796b; 
             font-weight: bold; 
@@ -40,7 +46,7 @@
             margin-bottom: 2px;
         }
         .turno-horas { color: #555; font-size: 7px; font-weight: bold; }
-        .vacio { color: #eee; text-align: center; font-size: 14px; }
+        .vacio { color: #9e9e9e; text-align: center; font-size: 11px; }
     </style>
 </head>
 <body>
@@ -71,74 +77,89 @@
             <th>VIERNES</th>
             <th>SÁBADO</th>
             <th>DOMINGO</th>
+            <th class="col-totales">DÍAS</th>
+            <th class="col-totales">HORAS</th>
         </tr>
     </thead>
     <tbody>
     @foreach($usuarios as $u)
+        @php
+            // Inicializadores para los totales acumulados del usuario en la semana
+            $totalDiasTrabajados = 0;
+            $totalHorasSemanales = 0;
+            $fechasContadas = [];
+        @endphp
     <tr>
         <td class="col-personal">
             <span class="nombre-p">{{ $u->persona->nombre_completo ?? $u->name }}</span>
             <span class="cargo-p">{{ $categoria->nombre }}</span>
+            {{-- Muestra el tipo de salario dinámico que viene del modelo del usuario --}}
+          <span class="salario-p">[{{ $u->persona->tipo_salario ?? 'No Definido' }}]</span>
         </td>
 
         @for($i = 0; $i < 7; $i++)
             @php
                 $fechaString = \Carbon\Carbon::parse($fecha_inicio_limpia)->addDays($i)->format('Y-m-d');
                 
-                $asignacion = $u->turnosAsignados->first(function($item) use ($fechaString) {
+                // Filtramos la colección de asignaciones para este día específico
+                $asignacionesDelDia = $u->turnosAsignados->filter(function($item) use ($fechaString) {
                     return \Carbon\Carbon::parse($item->fecha)->format('Y-m-d') === $fechaString;
                 });
+
+                // Si trabajó este día, acumulamos sus métricas
+                if($asignacionesDelDia->isNotEmpty()) {
+                    if(!in_array($fechaString, $fechasContadas)) {
+                        $totalDiasTrabajados++;
+                        $fechasContadas[] = $fechaString;
+                    }
+                    foreach($asignacionesDelDia as $asig) {
+                        // Suma la duración guardada en la tabla relacional de turnos
+                        $totalHorasSemanales += floatval($asig->turno->duracion_horas ?? 0);
+                    }
+                }
             @endphp
 
-           <td align="center">
-    @php
-        $fechaString = \Carbon\Carbon::parse($fecha_inicio_limpia)->addDays($i)->format('Y-m-d');
-        
-        // Aquí obtenemos la COLECCIÓN de turnos del día
-        $asignacionesDelDia = $u->turnosAsignados->filter(function($item) use ($fechaString) {
-            return \Carbon\Carbon::parse($item->fecha)->format('Y-m-d') === $fechaString;
-        });
-    @endphp
+            <td align="center">
+                @if($asignacionesDelDia->isNotEmpty())
+                    @foreach($asignacionesDelDia as $asignacion)
+                        <div class="turno-box" style="margin-bottom: 4px;">
+                            {{-- 1. AREA --}}
+                            <span class="turno-area">
+                                {{ $asignacion->area->nombre ?? ($asignacion->servicio->nombre ?? 'GENERAL') }}
+                            </span>
 
-    {{-- 1. Verificamos si la colección tiene elementos --}}
-    @if($asignacionesDelDia->isNotEmpty())
-        
-        {{-- 2. Iteramos la colección. AQUÍ es donde accedemos a cada 'turno' --}}
-        @foreach($asignacionesDelDia as $asignacion)
-            
-<div class="turno-box" style="margin-bottom: 4px;">
-    {{-- 1. AREA: Mostramos siempre el nombre del área --}}
-    <span class="turno-area">
-        {{ $asignacion->area->nombre ?? ($asignacion->servicio->nombre ?? 'GENERAL') }}
-    </span>
+                            {{-- 2. NOMBRE DEL TURNO --}}
+                            <span class="turno-nombre">
+                                {{ $asignacion->turno->nombre_turno ?? 'Sin Nombre' }}
+                            </span>
 
-    {{-- 2. NOMBRE DEL TURNO --}}
-    <span class="turno-nombre">
-        {{ $asignacion->turno->nombre_turno ?? 'Sin Nombre' }}
-    </span>
+                            {{-- 3. HORARIO --}}
+                            <span class="turno-horas">
+                                {{ \Carbon\Carbon::parse($asignacion->turno->hora_inicio)->format('H:i') }} - 
+                                {{ \Carbon\Carbon::parse($asignacion->turno->hora_fin)->format('H:i') }}
+                            </span>
 
-    {{-- 3. HORARIO --}}
-    <span class="turno-horas">
-        {{ \Carbon\Carbon::parse($asignacion->turno->hora_inicio)->format('H:i') }} - 
-        {{ \Carbon\Carbon::parse($asignacion->turno->hora_fin)->format('H:i') }}
-    </span>
-
-    {{-- 4. ETIQUETA ROJA: Solo si el turno pertenece a un SERVICIO diferente al del reporte --}}
-    @if($asignacion->servicio_id != $servicio->id)
-        <div style="color: #e74c3c; font-size: 6px; font-weight: bold; margin-top: 2px; border-top: 0.5px solid #ccc; padding-top: 1px; text-transform: uppercase;">
-            {{ $asignacion->servicio->nombre ?? 'EXTERNO' }}
-        </div>
-    @endif
-</div>
-
-
-        @endforeach
-
-    @else
-        <span class="vacio">-</span>
-    @endif
-</td>
+                            {{-- 4. ETIQUETA ROJA EXTERNA --}}
+                            @if($asignacion->servicio_id != $servicio->id)
+                                <div style="color: #e74c3c; font-size: 6px; font-weight: bold; margin-top: 2px; border-top: 0.5px solid #ccc; padding-top: 1px; text-transform: uppercase;">
+                                    {{ $asignacion->servicio->nombre ?? 'EXTERNO' }}
+                                </div>
+                            @endif
+                        </div>
+                    @endforeach
+                @else
+                    <span class="vacio">-</span>
+                @endif
+            </td>
         @endfor
+
+        {{-- CELDAS DE TOTALES (DÍAS Y HORAS) --}}
+        <td class="col-totales">
+            {{ $totalDiasTrabajados }}
+        </td>
+        <td class="col-totales horas-txt">
+            {{ $totalHorasSemanales }}h
+        </td>
     </tr>
     @endforeach
 </tbody>

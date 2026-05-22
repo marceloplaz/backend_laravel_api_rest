@@ -391,6 +391,7 @@ $resultado = $equipo->map(function($user) use ($semana_id) {
         'usuario_id'       => $user->id,
         'usuario_nombre'   => $user->persona ? $user->persona->nombre_completo : $user->name,
         'categoria_nombre' => $user->categoria ? $user->categoria->nombre : 'Sin categoría',
+        'tipo_salario'  => $user->persona ? $user->persona->tipo_salario : 'No definido',
         'turnos'           => $todosLosTurnos
     ];
 });
