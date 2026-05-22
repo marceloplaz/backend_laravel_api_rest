@@ -551,83 +551,145 @@ public function vaciarMes(Request $request)
 
 public function rotarPersonalPorMes(Request $request)
 {
-    $servicioId = $request->servicio_id;
+    $servicioId = (int) $request->servicio_id; 
     $mesOrigenId = $request->mes_id;
     $mesDestinoId = $request->mes_destino;
-    
-    // Año que viene desde Angular (ej: 2026)
     $anoDestino = $request->input('gestion_destino_id'); 
+    
+    // 1. Limpiar y normalizar los IDs que vienen del Modal (Los que SÍ deben rotar)
     $usuariosSeleccionados = $request->input('usuarios_ids', []);
+    $usuariosParaRotar = array_map('intval', array_unique(array_filter($usuariosSeleccionados)));
 
-    // --- CORRECCIÓN DE LLAVE FORÁNEA USANDO LA COLUMNA 'año' ---
+    // Traducir año a ID de gestión de destino
     $gestionIdReal = null;
     if ($anoDestino) {
-        // Buscamos usando el nombre exacto de la columna 'año' visto en HeidiSQL
         $gestion = DB::table('gestiones')->where('año', $anoDestino)->first(); 
-        
         if ($gestion) {
-            $gestionIdReal = $gestion->id; // Para 2026 esto obtendrá correctamente el ID: 1
+            $gestionIdReal = $gestion->id;
         }
     }
 
-    // El mapa circular se arma con los IDs del modal
-    $usuarios = array_unique(array_filter($usuariosSeleccionados));
+    // 2. Obtener todos los usuarios que pertenecen a este servicio en el mes origen
+    $todosLosUsuariosServicio = DB::table('turnos_asignados')
+        ->where('servicio_id', $servicioId)
+        ->where('mes_id', $mesOrigenId)
+        ->distinct()
+        ->pluck('usuario_id')
+        ->toArray();
+    $todosLosUsuariosServicio = array_map('intval', $todosLosUsuariosServicio);
 
+    // 3. SEPARACIÓN REAL E INFALIBLE:
+    // Los fijos (Sra. Rueda) son los que están en la base de datos pero NO se tiquearon en el modal
+    $usuariosFijos = array_values(array_diff($todosLosUsuariosServicio, $usuariosParaRotar));
+
+    // 4. CONSTRUIR EL MAPA DE ROTACIÓN CIRCULAR (Solo para los tiqueados)
     $mapaRotacion = [];
-    if (count($usuarios) >= 2) {
-        $usuarios = array_values($usuarios); 
-        for ($i = 0; $i < count($usuarios); $i++) {
-            $indiceSiguiente = ($i + 1) % count($usuarios);
-            $mapaRotacion[$usuarios[$i]] = $usuarios[$indiceSiguiente];
+    if (count($usuariosParaRotar) >= 2) {
+        for ($i = 0; $i < count($usuariosParaRotar); $i++) {
+            $indiceSiguiente = ($i + 1) % count($usuariosParaRotar);
+            $mapaRotacion[$usuariosParaRotar[$i]] = $usuariosParaRotar[$indiceSiguiente];
         }
     }
 
     DB::beginTransaction();
     try {
-        // 2. Limpiar mes destino para evitar duplicados
+        // ========================================================
+        // 5. LIMPIEZA TOTAL DEL SERVICIO ACTIVO EN EL MES DESTINO
+        // ========================================================
+        // Vaciamos Junio para este servicio específico, garantizando un lienzo limpio
         DB::table('turnos_asignados')
             ->where('servicio_id', $servicioId)
             ->where('mes_id', $mesDestinoId)
             ->delete();
 
-        // 3. Obtener turnos de origen
-        $turnosOrigen = DB::table('turnos_asignados')
-            ->where('servicio_id', $servicioId)
-            ->where('mes_id', $mesOrigenId)
-            ->get();
+        $insercionesMaestras = [];
 
-        foreach ($turnosOrigen as $turno) {
-            
-            // Si el dueño del turno está en la rueda, rota. Si no (como Sulma), se queda con su ID original.
-            $nuevoUsuarioId = array_key_exists($turno->usuario_id, $mapaRotacion) 
-                ? $mapaRotacion[$turno->usuario_id] 
-                : $turno->usuario_id; 
-            
-            $infoSemanaOrigen = DB::table('semanas')->where('id', $turno->semana_id)->first();
+        // ========================================================
+        // BLOQUE A: PROCESAR USUARIOS QUE SÍ ROTAN (Tiqueados)
+        // ========================================================
+        if (!empty($usuariosParaRotar)) {
+            $turnosParaRotar = DB::table('turnos_asignados')
+                ->where('servicio_id', $servicioId)
+                ->where('mes_id', $mesOrigenId)
+                ->whereIn('usuario_id', $usuariosParaRotar)
+                ->orderBy('fecha', 'asc') // 🔄 CORRECCIÓN: Evita la lectura desordenada del disco
+                ->get();
+
+            foreach ($turnosParaRotar as $turno) {
+                $uidActual = (int)$turno->usuario_id;
+                $nuevoUsuarioId = array_key_exists($uidActual, $mapaRotacion) 
+                    ? $mapaRotacion[$uidActual] 
+                    : $uidActual;
+
+                $insercionesMaestras[] = [
+                    'usuario_id'     => $nuevoUsuarioId,
+                    'servicio_id'    => $servicioId, 
+                    'turno_id'       => $turno->turno_id,
+                    'area_id'        => $turno->area_id, // 💎 Mantenemos el área asignada si existiera
+                    'semana_id_orig' => $turno->semana_id,
+                    'fecha_orig'     => $turno->fecha,
+                    'gestion_orig'   => $turno->gestion_id
+                ];
+            }
+        }
+        // ========================================================
+        // BLOQUE B: PROCESAR USUARIOS FIJOS (Sra. Rueda - Clonación Idéntica)
+        // ========================================================
+        if (!empty($usuariosFijos)) {
+            // Traemos únicamente los turnos que la Sra. Rueda tiene en ESTE servicio y mes de origen
+            $turnosDeLosFijos = DB::table('turnos_asignados')
+                ->where('servicio_id', $servicioId)
+                ->where('mes_id', $mesOrigenId)
+                ->whereIn('usuario_id', $usuariosFijos) 
+                ->orderBy('fecha', 'asc')
+                ->get();
+
+            foreach ($turnosDeLosFijos as $turno) {
+                $insercionesMaestras[] = [
+                    'usuario_id'     => $turno->usuario_id,   // Mantiene su propio ID (no rota)
+                    'servicio_id'    => $servicioId,          // Mantiene el servicio actual
+                    'turno_id'       => $turno->turno_id,
+                    'area_id'        => $turno->area_id,
+                    'semana_id_orig' => $turno->semana_id,
+                    'fecha_orig'     => $turno->fecha,
+                    'gestion_orig'   => $turno->gestion_id
+                ];
+            }
+        }
+
+        // ========================================================
+        // BLOQUE C: ASIGNACIÓN MATEMÁTICA DE FECHAS E INSERCIÓN
+        // ========================================================
+        foreach ($insercionesMaestras as $item) {
+            $infoSemanaOrigen = DB::table('semanas')->where('id', $item['semana_id_orig'])->first();
             if (!$infoSemanaOrigen) continue;
 
-            $diaDeLaSemana = Carbon::parse($turno->fecha)->dayOfWeek;
+            // Encontrar el día exacto de la semana (0 = Domingo, 1 = Lunes, ..., 6 = Sábado)
+            $diaDeLaSemana = \Carbon\Carbon::parse($item['fecha_orig'])->dayOfWeek;
 
+            // Buscar la semana equivalente en la misma posición dentro del mes destino
             $semanaDestino = DB::table('semanas')
                 ->where('mes_id', $mesDestinoId)
                 ->where('numero_semana', $infoSemanaOrigen->numero_semana)
                 ->first();
 
             if ($semanaDestino) {
-                $nuevaFecha = Carbon::parse($semanaDestino->fecha_inicio)->addDays(
-                    ($diaDeLaSemana == 0 ? 6 : $diaDeLaSemana - 1)
-                );
+                // Calcular la fecha exacta sumando los días correspondientes a partir del inicio de la semana destino
+                // (Si es Domingo sumamos 6 días, de lo contrario sumamos el día actual - 1)
+                $diasAAsignar = ($diaDeLaSemana == 0) ? 6 : ($diaDeLaSemana - 1);
+                $nuevaFecha = \Carbon\Carbon::parse($semanaDestino->fecha_inicio)->addDays($diasAAsignar);
 
-                // Si encontramos la gestión correspondiente al año usamos su ID, de lo contrario hereda la del origen
-                $finalGestionId = $gestionIdReal ? $gestionIdReal : $turno->gestion_id;
+                $finalGestionId = $gestionIdReal ? $gestionIdReal : $item['gestion_orig'];
 
+                // Insertar el registro limpio
                 DB::table('turnos_asignados')->insert([
-                    'usuario_id'  => $nuevoUsuarioId,
-                    'servicio_id' => $servicioId,
-                    'turno_id'    => $turno->turno_id,
+                    'usuario_id'  => $item['usuario_id'],
+                    'servicio_id' => $item['servicio_id'], 
+                    'turno_id'    => $item['turno_id'],
+                    'area_id'     => $item['area_id'],
                     'mes_id'      => $mesDestinoId,
                     'semana_id'   => $semanaDestino->id,
-                    'gestion_id'  => $finalGestionId, // <-- Ahora sí inserta el ID relacional (1) en vez de 2026
+                    'gestion_id'  => $finalGestionId,
                     'fecha'       => $nuevaFecha->toDateString(),
                     'estado'      => 'programado',
                     'created_at'  => now(),
@@ -637,13 +699,17 @@ public function rotarPersonalPorMes(Request $request)
         }
 
         DB::commit();
-        return response()->json(['status' => 'success', 'message' => 'Rotación completada exitosamente.']);
+        return response()->json([
+            'status' => 'success', 
+            'message' => 'Rotación aplicada con éxito y usuarios fijos clonados correctamente.'
+        ]);
 
     } catch (\Exception $e) {
         DB::rollBack();
         return response()->json(['status' => 'error', 'message' => $e->getMessage()], 500);
     }
 }
+
 
 
 public function actualizarPosicion(Request $request)
