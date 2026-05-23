@@ -136,12 +136,13 @@ public function reporteMensual(Request $request)
 public function misTurnosMes(Request $request)
 {
     // Si viene usuario_id lo usamos (Modo Admin), si no, usamos el del token
-    $usuarioId = $request->query('usuario_id') ?? auth()->id();
+    $usuarioId  = $request->query('usuario_id') ?? auth()->id();
     $servicioId = $request->query('servicio_id');
-    $mes = $request->query('mes');
-    $anio = $request->query('anio');
+    $mes        = $request->query('mes');
+    $anio       = $request->query('anio');
 
-    $turnos = \App\Models\TurnoAsignado::with(['turno', 'area'])
+    // Cargamos los turnos con sus relaciones necesarias de manera eficiente
+    $turnos = \App\Models\TurnoAsignado::with(['turno', 'area', 'servicio'])
         ->where('usuario_id', $usuarioId)
         ->where('servicio_id', $servicioId)
         ->whereMonth('fecha', $mes)
@@ -149,18 +150,124 @@ public function misTurnosMes(Request $request)
         ->get();
 
     $dataFormateada = $turnos->map(function ($t) {
+        // Formateamos las horas limpiamente si el turno existe
+        $horarioTexto = $t->turno 
+            ? \Carbon\Carbon::parse($t->turno->hora_inicio)->format('H:i') . ' - ' . \Carbon\Carbon::parse($t->turno->hora_fin)->format('H:i')
+            : 'N/A';
+
         return [
             'id_asignacion' => $t->id,
-            'nombre_turno'  => $t->turno->nombre_turno,
-            'horario'       => $t->turno->hora_inicio . ' - ' . $t->turno->hora_fin,
+            'nombre_turno'  => $t->turno?->nombre_turno ?? 'Sin Turno',
+            'horario'       => $horarioTexto,
             'fecha'         => $t->fecha,
-            'area_nombre'   => $t->area->nombre ?? ($t->servicio->nombre ?? 'Servicio General'),
-            'color'         => $t->color ?? '#28a745'
+            'area_nombre'   => $t->area?->nombre ?? ($t->servicio?->nombre ?? 'Servicio General'),
+            'color'         => $t->turno?->color ?? '#28a745',
+            
+            // 🌟 LA SOLUCIÓN DIRECTA: Duración inyectada en la raíz del objeto plano
+            'duracion_horas' => $t->turno ? (float)$t->turno->duracion_horas : 0,
         ];
     });
 
-    return response()->json(['status' => 'success', 'data' => $dataFormateada]);
+    return response()->json([
+        'status' => 'success', 
+        'data'   => $dataFormateada
+    ]);
 }
+public function reporteHorasSemana(Request $request, $semana_id, $usuario_id = null)
+{
+    $userAutenticado = auth()->user();
+    $nivelMinimo = $userAutenticado->categoria->nivel;
+
+    // 1. Obtener los límites y fechas reales de la semana seleccionada
+    $semana = \App\Models\Semana::findOrFail($semana_id);
+    $fechaInicio = $semana->fecha_inicio;
+    $fechaFin = $semana->fecha_fin;
+
+    // 2. Filtrar los usuarios que analizaremos (por ID específico o por jerarquía visible)
+    $usuariosQuery = \App\Models\User::with(['persona', 'categoria']);
+
+    if ($usuario_id) {
+        $usuariosQuery->where('id', $usuario_id);
+    } else {
+        $usuariosQuery->whereHas('categoria', function($q) use ($nivelMinimo) {
+            $q->where('nivel', '>=', $nivelMinimo);
+        });
+    }
+
+    $usuarios = $usuariosQuery->get();
+
+    // 3. Procesar las horas de cada usuario basándonos estrictamente en sus turnos de la semana
+    $resultado = $usuarios->map(function ($user) use ($semana_id, $fechaInicio, $fechaFin) {
+        
+        // A. Turnos donde es el TITULAR original en esta semana
+        $turnosDirectos = \App\Models\TurnoAsignado::where('usuario_id', $user->id)
+            ->where('semana_id', $semana_id)
+            ->with(['turno', 'novedad'])
+            ->get();
+
+        // B. Turnos virtuales donde actúa como REEMPLAZO en esta semana
+        $novedadesComoReemplazo = \App\Models\NovedadLaboral::where('usuario_reemplazo_id', $user->id)
+            ->whereHas('asignacion', function($q) use ($semana_id) {
+                $q->where('semana_id', $semana_id);
+            })
+            ->with(['asignacion.turno'])
+            ->get();
+
+        $turnosVirtuales = $novedadesComoReemplazo->map(function($nov) {
+            return $nov->asignacion;
+        });
+
+        // C. Unificar turnos evitando duplicados por ID de asignación
+        $todosLosTurnos = $turnosDirectos->concat($turnosVirtuales)
+            ->unique('id')
+            ->values();
+
+        // D. Calcular horas totales acumulando directamente el campo duracion_horas de la BD
+        $totalHorasAcumuladas = 0;
+        $detalleTurnos = [];
+
+        foreach ($todosLosTurnos as $ta) {
+            // Si el usuario cedió su turno (tiene novedad y él es el solicitante), no suma horas para él
+            if ($ta->novedad && $ta->novedad->usuario_solicitante_id == $user->id) {
+                continue; 
+            }
+
+            if ($ta->turno) {
+                // 🌟 OPTIMIZACIÓN CLAVE: Usamos la columna directa de HeidiSQL
+                $horasTurno = (float)($ta->turno->duracion_horas ?? 0);
+                $totalHorasAcumuladas += $horasTurno;
+
+                $detalleTurnos[] = [
+                    'id_asignacion' => $ta->id,
+                    'fecha' => $ta->fecha,
+                    'nombre_turno' => $ta->turno->nombre_turno,
+                    'horario' => "{$ta->turno->hora_inicio} - {$ta->turno->hora_fin}",
+                    'duracion_horas' => $horasTurno
+                ];
+            }
+        }
+
+        return [
+            'id' => $user->id,
+            'nombre' => $user->persona->nombre_completo ?? $user->name,
+            'tipo_salario' => $user->persona->tipo_salario ?? 'No definido',
+            'total_horas' => round($totalHorasAcumuladas, 2), // 👈 ESTO ES LO QUE LEERÁ ANGULAR
+            'conteo_turnos' => count($detalleTurnos),
+            'detalle' => $detalleTurnos
+        ];
+    });
+$idBuscado = $usuario_id ?? $userAutenticado->id;
+    $usuarioEncontrado = $resultado->firstWhere('id', $idBuscado);
+    $totalHorasEspecifico = $usuarioEncontrado ? $usuarioEncontrado['total_horas'] : 0;
+    // 4. Retornar la respuesta con el formato limpio para Angular
+return response()->json([
+        'status' => 'success',
+        'total_horas_semana' => $totalHorasEspecifico, // 🌟 Atajo directo si consultas un ID
+        'data' => $resultado
+    ], 200);
+}
+
+
 public function buscarProfesionales(Request $request)
 {
     $termino = $request->query('buscar');

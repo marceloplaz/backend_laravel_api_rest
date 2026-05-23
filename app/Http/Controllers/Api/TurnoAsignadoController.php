@@ -260,73 +260,46 @@ public function reporteSemanal(Request $request, $semana_id)
     /**
      * 4. MIS TURNOS
      */
-   public function misTurnos()
+ public function misTurnos()
 {
-    $turnos = TurnoAsignado::with(['servicio', 'turno', 'usuario.persona', 'usuario.categoria'])
+    // 1. Cargamos los turnos con las relaciones exactas que mapea tu interfaz
+    $turnos = TurnoAsignado::with(['servicio', 'turno', 'area', 'usuario.persona'])
         ->where('usuario_id', auth()->id())
         ->orderBy('fecha', 'asc')
         ->get();
 
-    return \App\Http\Resources\TurnoAsignadoResource::collection($turnos);
-}
-public function reporteHorasSemana(Request $request, $semana_id, $usuario_id = null)
-{
-    $userAutenticado = auth()->user();
-    $nivelMinimo = $userAutenticado->categoria->nivel;
-
-    // 1. Iniciamos la consulta base
-    $query = TurnoAsignado::with(['usuario.persona', 'turno'])
-        ->where('semana_id', $semana_id);
-
-    // 2. Si se pasa un usuario_id, filtramos por él. Si no, traemos a todos los visibles por jerarquía.
-    if ($usuario_id) {
-        $query->where('usuario_id', $usuario_id);
-    } else {
-        $query->whereHas('usuario.categoria', function($q) use ($nivelMinimo) {
-            $q->where('nivel', '>=', $nivelMinimo);
-        });
-    }
-
-    $turnos = $query->get();
-
-    // 3. Procesamos los datos agrupando por usuario
-    $reporte = $turnos->groupBy('usuario_id')->map(function ($asignaciones) {
-        $usuario = $asignaciones->first()->usuario;
-        
-        $totalMinutos = $asignaciones->sum(function ($a) {
-            $inicio = Carbon::parse($a->turno->hora_inicio);
-            $fin = Carbon::parse($a->turno->hora_fin);
-
-            // Si el turno termina al día siguiente (ej. 22:00 a 06:00)
-            if ($fin->lessThan($inicio)) {
-                $fin->addDay();
-            }
-            return $inicio->diffInMinutes($fin);
-        });
-
+    // 2. Formateamos la colección respetando el estándar plano que ya lee tu UI
+    $coleccionFormateada = $turnos->map(function($ta) {
         return [
-            'id' => $usuario->id,
-            'nombre' => $usuario->persona->nombre_completo ?? $usuario->name,
-            'total_horas' => round($totalMinutos / 60, 2),
-            'conteo_turnos' => $asignaciones->count(),
-            'detalle' => $asignaciones->map(fn($a) => [
-                'fecha' => $a->fecha,
-                'turno' => $a->turno->nombre_turno,
-                'rango' => "{$a->turno->hora_inicio} - {$a->turno->hora_fin}"
-            ])
+            'id_asignacion' => $ta->id,
+            'nombre_turno'  => $ta->turno?->nombre_turno ?? 'Sin Nombre',
+            'fecha'         => $ta->fecha,
+            'horario'       => $ta->turno ? "{$ta->turno->hora_inicio} - {$ta->turno->hora_fin}" : 'N/A',
+            'color'         => $ta->turno?->color ?? '#28a745',
+            'area_nombre'   => $ta->area ? $ta->area->nombre : ($ta->servicio ? $ta->servicio->nombre : 'GENERAL'),
+            
+            // 🌟 ANCLAJE DE RELACIONES PARA TU INTERFAZ 'TurnoAsignado' de Angular
+            'turno' => $ta->turno ? [
+                'nombre_turno'   => $ta->turno->nombre_turno,
+                'hora_inicio'    => $ta->turno->hora_inicio,
+                'hora_fin'       => $ta->turno->hora_fin,
+                'duracion_horas' => (float)($ta->turno->duracion_horas ?? 0) // Viaja seguro dentro del objeto turno
+            ] : null,
+            
+            'area' => [
+                'nombre' => $ta->area ? $ta->area->nombre : ($ta->servicio ? $ta->servicio->nombre : 'GENERAL')
+            ]
         ];
-    })->values();
+    });
 
-// En Laravel: TurnoAsignadoController.php
-return response()->json([
-    'status' => 'success',
-    'data' => $resultado  // Cambia 'equipo_visible' por 'data'
-], 200);
+    // 3. Retornamos directamente la colección como un Array Plano para mantener compatibilidad
+    return response()->json($coleccionFormateada);
 }
-/**
- * 5. OBTENER EQUIPO FILTRADO (Para el frontend de Angular)
- * Filtra el personal de un servicio y opcionalmente por su categoría.
- */
+
+
+
+
+
 
 public function getEquipoFiltrado(Request $request)
     {
@@ -411,28 +384,29 @@ $resultado = $equipo->map(function($user) use ($semana_id) {
     /**
      * Helper para unificar el formato del JSON
      */
-    private function formatearTurno($ta, $novedad) {
+private function formatearTurno($ta, $novedad) {
     // Extraemos los nombres de la columna 'nombre_completo'
     $nombreSolicitante = $novedad?->solicitante?->persona?->nombre_completo ?? 'N/A';
-    $nombreReemplazo = $novedad?->reemplazo?->persona?->nombre_completo ?? 'N/A';
+    $nombreReemplazo   = $novedad?->reemplazo?->persona?->nombre_completo ?? 'N/A';
+
+    $horaInicioFormateada = $ta->turno ? Carbon::parse($ta->turno->hora_inicio)->format('H:i') : '00:00';
+    $horaFinFormateada    = $ta->turno ? Carbon::parse($ta->turno->hora_fin)->format('H:i') : '00:00';
 
     return [
-        'id_asignacion' => $ta->id,
-        'nombre_turno'  => $ta->turno->nombre_turno,
-        'hora_inicio'   => Carbon::parse($ta->turno->hora_inicio)->format('H:i'), 
-        'hora_fin'      => Carbon::parse($ta->turno->hora_fin)->format('H:i'),
-        'duracion_horas'=> $ta->turno->duracion_horas,
-        'fecha'         => $ta->fecha,
-        'color'         => $novedad ? '#fd7e14' : ($ta->turno->color ?? '#52600c'),
+        'id_asignacion'  => $ta->id,
+        'nombre_turno'   => $ta->turno?->nombre_turno ?? 'Sin Turno',
+        'hora_inicio'    => $horaInicioFormateada, 
+        'hora_fin'       => $horaFinFormateada,
+        'horario'        => $ta->turno ? "{$ta->turno->hora_inicio} - {$ta->turno->hora_fin}" : 'N/A',
+        
+        // 🌟 ¡AQUÍ MISMO EN LA RAÍZ! Directo y sin vueltas
+        'duracion_horas' => $ta->turno ? (float)$ta->turno->duracion_horas : 0,
+        
+        'fecha'          => $ta->fecha,
+        'color'          => $novedad ? '#fd7e14' : ($ta->turno->color ?? '#52600c'),
+        'area_nombre'    => $ta->area ? $ta->area->nombre : ($ta->servicio ? $ta->servicio->nombre : 'GENERAL'),
 
-        // --- CAMBIO AQUÍ ---
-        // Si tiene área, muestra el nombre del área.
-        // Si no tiene área, intenta mostrar el nombre del servicio.
-        // Si por alguna razón no hay servicio, recién ahí pone 'GENERAL'.
-        'area_nombre'   => $ta->area ? $ta->area->nombre : ($ta->servicio ? $ta->servicio->nombre : 'GENERAL'),
-        // -------------------
-
-        'novedad'       => $novedad ? [
+        'novedad' => $novedad ? [
             'usuario_solicitante_id' => $novedad->usuario_solicitante_id,
             'usuario_reemplazo_id'   => $novedad->usuario_reemplazo_id,
             'tipo'                   => $novedad->tipo,
@@ -723,19 +697,27 @@ public function actualizarPosicion(Request $request)
 
     try {
         return DB::transaction(function () use ($request) {
-            // Cargamos el origen con sus relaciones
+            // 1. Cargamos el origen con sus relaciones
             $asigOrigen = TurnoAsignado::with(['usuario.persona'])->findOrFail($request->turno_id);
             
-            $fechaAntigua = $asigOrigen->fecha;
-            $userAntiguo  = $asigOrigen->usuario_id;
+            $fechaAntigua  = $asigOrigen->fecha;
+            $userAntiguo   = $asigOrigen->usuario_id;
             $semanaAntigua = $asigOrigen->semana_id;
 
             // Evitar el error de "nombre_completo on null"
             $nombreOrigen = $asigOrigen->usuario?->persona?->nombre_completo ?? 'Usuario Origen';
+            $fechaNueva   = Carbon::parse($request->nueva_fecha)->format('Y-m-d');
 
-            $fechaNueva = Carbon::parse($request->nueva_fecha)->format('Y-m-d');
+            // 2. Resolver dinámicamente el ID de la semana destino usando la fecha nueva
+            $semanaDestino = \App\Models\Semana::where('fecha_inicio', '<=', $fechaNueva)
+                ->where('fecha_fin', '>=', $fechaNueva)
+                ->first();
 
-            // Buscamos si hay alguien en el destino
+            if (!$semanaDestino) {
+                throw new \Exception("La fecha destino {$fechaNueva} no se encuentra dentro de ninguna semana configurada en el sistema.");
+            }
+
+            // 3. Buscamos si hay alguien ocupando esa celda exacta en el destino
             $asigDestino = TurnoAsignado::with(['usuario.persona'])
                 ->where('usuario_id', $request->nuevo_usuario_id)
                 ->where('fecha', $fechaNueva)
@@ -745,7 +727,7 @@ public function actualizarPosicion(Request $request)
             if ($asigDestino) {
                 $nombreDestino = $asigDestino->usuario?->persona?->nombre_completo ?? 'Usuario Destino';
 
-                // Intercambio Físico: El de destino se va a la posición de origen
+                // Intercambio Físico: El de destino se va a la posición que dejó el origen vacía
                 $asigDestino->update([
                     'usuario_id'  => $userAntiguo,
                     'fecha'       => $fechaAntigua,
@@ -753,33 +735,35 @@ public function actualizarPosicion(Request $request)
                     'observacion' => "Intercambio: Cedió lugar a $nombreOrigen"
                 ]);
 
-                // El de origen se va a la posición de destino
+                // El de origen se posiciona en el casillero del destino
                 $asigOrigen->update([
                     'usuario_id'  => $request->nuevo_usuario_id,
                     'fecha'       => $fechaNueva,
-                    'semana_id'   => $this->obtenerSemanaIdPorFecha($fechaNueva),
+                    'semana_id'   => $semanaDestino->id,
                     'observacion' => "Intercambio: Tomó lugar de $nombreDestino"
                 ]);
 
-                $mensaje = "Intercambio realizado exitosamente.";
+                $mensaje = "Intercambio realizado exitosamente entre $nombreOrigen y $nombreDestino.";
             } else {
-                // Movimiento simple
+                // Desplazamiento simple (Celda destino libre)
                 $asigOrigen->update([
-                    'usuario_id' => $request->nuevo_usuario_id,
-                    'fecha'      => $fechaNueva,
-                    'semana_id'  => $this->obtenerSemanaIdPorFecha($fechaNueva),
+                    'usuario_id'  => $request->nuevo_usuario_id,
+                    'fecha'       => $fechaNueva,
+                    'semana_id'   => $semanaDestino->id,
                     'observacion' => "Desplazamiento a $fechaNueva"
                 ]);
-                $mensaje = "Turno movido correctamente.";
+                $mensaje = "Turno de $nombreOrigen movido correctamente.";
             }
 
-            return response()->json(['status' => 'success', 'message' => $mensaje]);
+            return response()->json([
+                'status'  => 'success',
+                'message' => $mensaje
+            ], 200);
         });
     } catch (\Exception $e) {
-        // Esto te dirá exactamente qué falló en la consola si vuelve a dar error
+        // Reporte quirúrgico de fallas para depurar rápido desde el Network de Chrome
         return response()->json([
-            'status' => 'error', 
-            // Usamos $e->getLine() para saber dónde falló exactamente
+            'status'  => 'error', 
             'message' => 'Error en línea ' . $e->getLine() . ': ' . $e->getMessage() 
         ], 500);
     }

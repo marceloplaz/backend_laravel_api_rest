@@ -57,6 +57,7 @@ Route::put('vacaciones/{id}/estado', [VacacionController::class, 'actualizarEsta
 
   });
 
+
    Route::get('gestiones', function() {
         return response()->json(\App\Models\Gestion::all());
     });
@@ -84,7 +85,11 @@ $ROLES_TECNICO    = $ROLES_JEFATURAS  . ',responsable_tecnico';
         Route::get('persona/{id}', [PersonaController::class, 'show']);
         Route::get('servicios/inicio', [ServicioController::class, 'inicio']);
         Route::get('turnos/mis-turnos', [TurnoController::class, 'misTurnosMes']);
-    
+        
+       Route::prefix('reportes')->group(function () {
+    // 🌟 Cambiamos TurnoAsignadoController por TurnoController
+    Route::get('reporte-semanal/{semana_id}/{usuario_id?}', [TurnoController::class, 'reporteHorasSemana']);
+});
         // --- Consultas Base del Dashboard (Accesibles para todos los logueados) ---
         Route::get("/roles", [UserController::class, "getRoles"]);
         Route::get("/categorias-lista", [TurnoAsignadoController::class, "listaCategorias"]);
@@ -117,7 +122,7 @@ Route::put('vacaciones/{id}/estado', [VacacionController::class, 'actualizarEsta
         Route::prefix('reportes')->group(function () {
         Route::get('semanal/{semana_id}', [TurnoAsignadoController::class, 'reporteSemanal']);
         Route::get('mensual/{mes_id}', [TurnoAsignadoController::class, 'reporteMensual']);
-        Route::get('reporte-semanal/{semana_id}/{usuario_id?}', [TurnoAsignadoController::class, 'reporteHorasSemana']);
+        
           Route::get('turnos/resumen-mensual', [TurnoAsignadoController::class, 'getResumenMensual']);
         }); 
             // Cambia /persona/ por /personal/
