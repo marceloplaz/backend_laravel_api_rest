@@ -43,9 +43,28 @@ public function inicio()
         return response()->json(['message' => 'No autorizado'], 401);
     }
 
-    // Solo obtenemos los servicios donde la vinculación del usuario esté activa
-    $servicios = $usuario->servicios()
-        ->wherePivot('estado', 1)
+    // Capturamos el mes y año actuales para buscar sus guardias del mes
+    $mesActual = Carbon::now()->month;
+    $anioActual = Carbon::now()->year;
+
+    // Buscamos todos los servicios que cumplan cualquiera de las dos condiciones
+    $servicios = Servicio::where(function($query) use ($usuario) {
+            // Condición 1: Servicios donde tiene vinculación fija activa (Tu lógica original)
+            $query->whereHas('usuarios', function ($q) use ($usuario) {
+                $q->where('user_id', $usuario->id)
+                  ->where('usuario_servicio.estado', 1); // Ajusta 'usuario_servicio' si tu tabla pivote se llama distinto
+            });
+        })
+        ->orWhereHas('turnosAsignados', function ($query) use ($usuario, $mesActual, $anioActual) {
+            // Condición 2: Servicios donde tiene turnos/guardias programadas este mes
+            // ⚠️ NOTA: Verifica si tu relación en el modelo 'Servicio' hacia los turnos asignados 
+            // se llama 'turnosAsignados' o simplemente 'turnos' y cámbialo aquí si es necesario.
+            $query->where('user_id', $usuario->id)
+                  ->whereMonth('fecha', $mesActual)
+                  ->whereYear('fecha', $anioActual);
+        })
+        ->select('id', 'nombre')
+        ->distinct() // Evita duplicados si está vinculado y además tiene turnos en el mismo servicio
         ->get();
 
     return response()->json([
