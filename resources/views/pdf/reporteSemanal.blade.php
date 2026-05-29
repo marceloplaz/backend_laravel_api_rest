@@ -48,7 +48,7 @@
         }
         .turno-area { 
             color: #140101; 
-            font-size: 9.5px; /* Aumentado para lectura clara */
+            font-size: 8.5px; /* Aumentado para lectura clara */
             font-weight: bold; 
             display: block; 
             margin-bottom: 2px; 

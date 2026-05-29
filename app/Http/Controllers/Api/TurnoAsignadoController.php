@@ -528,14 +528,22 @@ public function rotarPersonalPorMes(Request $request)
 {
     $servicioId = (int) $request->servicio_id; 
     $mesOrigenId = $request->mes_id;
-    $mesDestinoId = $request->mes_destino;
-    $anoDestino = $request->input('gestion_destino_id'); 
+    $mesDestinoId = $request->mes_destino; 
+    $anoDestino = $request->input('gestion'); 
     
-    // 1. Limpiar y normalizar los IDs que vienen del Modal (Los que SÍ deben rotar)
-    $usuariosSeleccionados = $request->input('usuarios_ids', []);
-    $usuariosParaRotar = array_map('intval', array_unique(array_filter($usuariosSeleccionados)));
+    // 1. Capturar la distribución desde Angular
+    $distribucion = $request->input('distribucion', []);
+    $usuariosParaRotar = [];
 
-    // Traducir año a ID de gestión de destino
+    foreach ($distribucion as $item) {
+        if (!empty($item['usuario_id']) && isset($item['seleccionado']) && $item['seleccionado'] === true) {
+            $usuariosParaRotar[] = (int) $item['usuario_id'];
+        }
+    }
+    $usuariosParaRotar = array_values(array_unique($usuariosParaRotar));
+    $totalRotantes = count($usuariosParaRotar);
+
+    // Traducir año a ID de gestión
     $gestionIdReal = null;
     if ($anoDestino) {
         $gestion = DB::table('gestiones')->where('año', $anoDestino)->first(); 
@@ -544,34 +552,12 @@ public function rotarPersonalPorMes(Request $request)
         }
     }
 
-    // 2. Obtener todos los usuarios que pertenecen a este servicio en el mes origen
-    $todosLosUsuariosServicio = DB::table('turnos_asignados')
-        ->where('servicio_id', $servicioId)
-        ->where('mes_id', $mesOrigenId)
-        ->distinct()
-        ->pluck('usuario_id')
-        ->toArray();
-    $todosLosUsuariosServicio = array_map('intval', $todosLosUsuariosServicio);
-
-    // 3. SEPARACIÓN REAL E INFALIBLE:
-    // Los fijos (Sra. Rueda) son los que están en la base de datos pero NO se tiquearon en el modal
-    $usuariosFijos = array_values(array_diff($todosLosUsuariosServicio, $usuariosParaRotar));
-
-    // 4. CONSTRUIR EL MAPA DE ROTACIÓN CIRCULAR (Solo para los tiqueados)
-    $mapaRotacion = [];
-    if (count($usuariosParaRotar) >= 2) {
-        for ($i = 0; $i < count($usuariosParaRotar); $i++) {
-            $indiceSiguiente = ($i + 1) % count($usuariosParaRotar);
-            $mapaRotacion[$usuariosParaRotar[$i]] = $usuariosParaRotar[$indiceSiguiente];
-        }
-    }
-
     DB::beginTransaction();
     try {
         // ========================================================
-        // 5. LIMPIEZA TOTAL DEL SERVICIO ACTIVO EN EL MES DESTINO
+        // 2. LIMPIEZA EXCLUSIVA DEL SERVICIO EN EL MES DESTINO
         // ========================================================
-        // Vaciamos Junio para este servicio específico, garantizando un lienzo limpio
+        // Solo eliminamos Hemodiálisis en Julio. Pediatría de Julio NO se toca.
         DB::table('turnos_asignados')
             ->where('servicio_id', $servicioId)
             ->where('mes_id', $mesDestinoId)
@@ -579,92 +565,107 @@ public function rotarPersonalPorMes(Request $request)
 
         $insercionesMaestras = [];
 
-        // ========================================================
-        // BLOQUE A: PROCESAR USUARIOS QUE SÍ ROTAN (Tiqueados)
-        // ========================================================
-        if (!empty($usuariosParaRotar)) {
-            $turnosParaRotar = DB::table('turnos_asignados')
-                ->where('servicio_id', $servicioId)
-                ->where('mes_id', $mesOrigenId)
-                ->whereIn('usuario_id', $usuariosParaRotar)
-                ->orderBy('fecha', 'asc') // 🔄 CORRECCIÓN: Evita la lectura desordenada del disco
-                ->get();
 
-            foreach ($turnosParaRotar as $turno) {
-                $uidActual = (int)$turno->usuario_id;
-                $nuevoUsuarioId = array_key_exists($uidActual, $mapaRotacion) 
-                    ? $mapaRotacion[$uidActual] 
-                    : $uidActual;
 
-                $insercionesMaestras[] = [
-                    'usuario_id'     => $nuevoUsuarioId,
-                    'servicio_id'    => $servicioId, 
-                    'turno_id'       => $turno->turno_id,
-                    'area_id'        => $turno->area_id, // 💎 Mantenemos el área asignada si existiera
-                    'semana_id_orig' => $turno->semana_id,
-                    'fecha_orig'     => $turno->fecha,
-                    'gestion_orig'   => $turno->gestion_id
-                ];
+// ====================================================================
+// 3. CAPTURA Y ROTACIÓN EN CADENA ESTRICTA POR SERVICIO
+// ====================================================================
+if ($totalRotantes >= 2) {
+    for ($i = 0; $i < $totalRotantes; $i++) {
+        $usuarioActualId = $usuariosParaRotar[$i];
+
+        // Determinar quién hereda la fila
+        $siguienteIndice = ($i + 1) % $totalRotantes;
+        $usuarioHerederoId = $usuariosParaRotar[$siguienteIndice];
+
+        // 🌟 CONTROL ULTRA ESTRICTO:
+        // Aseguramos que el turno asignado que vamos a leer pertenezca al servicio real
+        // cruzándolo directamente con los turnos propios del servicio mediante un JOIN a la tabla 'turnos'
+        // o validando que el 'servicio_id' sea 100% el correcto.
+        $turnosFilaOrigen = DB::table('turnos_asignados')
+            ->where('mes_id', $mesOrigenId)
+            ->where('usuario_id', $usuarioActualId)
+            ->where('servicio_id', $servicioId) // El servicio que estás rotando en la UI
+            ->get();
+
+        foreach ($turnosFilaOrigen as $turno) {
+            
+            // 🛑 EL FILTRO SALVAVIDAS:
+            // Si el turno que estamos revisando coincide en día/fecha con un turno que 
+            // NO debería rotar en este bloque, o queremos asegurar que solo se mueva
+            // lo que es nativo de la grilla de Hemodiálisis.
+            // Vamos a verificar si el 'turno_id' pertenece a la categoría/servicio correcto.
+            
+            // Si por error el turno del Domingo es de Pediatría, pero tiene 'servicio_id' de Hemodiálisis,
+            // podemos identificarlo por su área o porque NO debe transferirse a Dominga si es un turno "especial".
+            // Para bloquearlo por completo, si es día Domingo (dayOfWeek == 0) y sabemos que Hemodiálisis NO atiende domingos:
+            $esDomingo = \Carbon\Carbon::parse($turno->fecha)->dayOfWeek === 0;
+            
+            if ($esDomingo) {
+                // 👈 Ignoramos olímpicamente el domingo, porque Hemodiálisis rota de Lunes a Sábado.
+                // Pediatría se encargará de rotar sus propios domingos cuando toque.
+                continue; 
             }
-        }
-        // ========================================================
-        // BLOQUE B: PROCESAR USUARIOS FIJOS (Sra. Rueda - Clonación Idéntica)
-        // ========================================================
-        if (!empty($usuariosFijos)) {
-            // Traemos únicamente los turnos que la Sra. Rueda tiene en ESTE servicio y mes de origen
-            $turnosDeLosFijos = DB::table('turnos_asignados')
-                ->where('servicio_id', $servicioId)
-                ->where('mes_id', $mesOrigenId)
-                ->whereIn('usuario_id', $usuariosFijos) 
-                ->orderBy('fecha', 'asc')
-                ->get();
 
-            foreach ($turnosDeLosFijos as $turno) {
-                $insercionesMaestras[] = [
-                    'usuario_id'     => $turno->usuario_id,   // Mantiene su propio ID (no rota)
-                    'servicio_id'    => $servicioId,          // Mantiene el servicio actual
-                    'turno_id'       => $turno->turno_id,
-                    'area_id'        => $turno->area_id,
-                    'semana_id_orig' => $turno->semana_id,
-                    'fecha_orig'     => $turno->fecha,
-                    'gestion_orig'   => $turno->gestion_id
-                ];
-            }
+            $insercionesMaestras[] = [
+                'usuario_id'     => (int) $usuarioHerederoId, 
+                'servicio_id'    => $servicioId, 
+                'turno_id'       => $turno->turno_id,
+                'area_id'        => $turno->area_id, 
+                'semana_id_orig' => $turno->semana_id,
+                'fecha_orig'     => $turno->fecha,
+                'gestion_orig'   => $turno->gestion_id
+            ];
         }
+    }
+}
+        
 
         // ========================================================
-        // BLOQUE C: ASIGNACIÓN MATEMÁTICA DE FECHAS E INSERCIÓN
+        // 4. MIGRACIÓN CRONOLÓGICA A LAS SEMANAS DE JULIO
         // ========================================================
+        $semanasMesOrigen = DB::table('semanas')
+            ->where('mes_id', $mesOrigenId)
+            ->orderBy('fecha_inicio', 'asc')
+            ->pluck('id')
+            ->toArray();
+
+        $semanasMesDestino = DB::table('semanas')
+            ->where('mes_id', $mesDestinoId)
+            ->orderBy('fecha_inicio', 'asc')
+            ->get();
+
+        if ($semanasMesDestino->isEmpty()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => "El mes destino seleccionado no tiene semanas configuradas en Laragon."
+            ], 422);
+        }
+
         foreach ($insercionesMaestras as $item) {
-            $infoSemanaOrigen = DB::table('semanas')->where('id', $item['semana_id_orig'])->first();
-            if (!$infoSemanaOrigen) continue;
+            $posicionRelativa = array_search($item['semana_id_orig'], $semanasMesOrigen);
+            if ($posicionRelativa === false) continue;
 
-            // Encontrar el día exacto de la semana (0 = Domingo, 1 = Lunes, ..., 6 = Sábado)
-            $diaDeLaSemana = \Carbon\Carbon::parse($item['fecha_orig'])->dayOfWeek;
-
-            // Buscar la semana equivalente en la misma posición dentro del mes destino
-            $semanaDestino = DB::table('semanas')
-                ->where('mes_id', $mesDestinoId)
-                ->where('numero_semana', $infoSemanaOrigen->numero_semana)
-                ->first();
+            $indiceDestino = min($posicionRelativa, $semanasMesDestino->count() - 1);
+            $semanaDestino = $semanasMesDestino->get($indiceDestino);
 
             if ($semanaDestino) {
-                // Calcular la fecha exacta sumando los días correspondientes a partir del inicio de la semana destino
-                // (Si es Domingo sumamos 6 días, de lo contrario sumamos el día actual - 1)
+                // Calcular el día exacto de la semana
+                $diaDeLaSemana = \Carbon\Carbon::parse($item['fecha_orig'])->dayOfWeek;
                 $diasAAsignar = ($diaDeLaSemana == 0) ? 6 : ($diaDeLaSemana - 1);
-                $nuevaFecha = \Carbon\Carbon::parse($semanaDestino->fecha_inicio)->addDays($diasAAsignar);
-
+                
+                $nuevaFecha = \Carbon\Carbon::parse($semanaDestino->fecha_inicio)->startOfDay()->addDays($diasAAsignar);
                 $finalGestionId = $gestionIdReal ? $gestionIdReal : $item['gestion_orig'];
 
-                // Insertar el registro limpio
+                // Insertar de forma limpia en el mes destino
                 DB::table('turnos_asignados')->insert([
-                    'usuario_id'  => $item['usuario_id'],
-                    'servicio_id' => $item['servicio_id'], 
-                    'turno_id'    => $item['turno_id'],
-                    'area_id'     => $item['area_id'],
-                    'mes_id'      => $mesDestinoId,
-                    'semana_id'   => $semanaDestino->id,
-                    'gestion_id'  => $finalGestionId,
+                    'usuario_id'  => (int) $item['usuario_id'],
+                    'servicio_id' => (int) $item['servicio_id'], 
+                    'turno_id'    => (int) $item['turno_id'],
+                    'area_id'     => $item['area_id'] ? (int) $item['area_id'] : null,
+                    'mes_id'      => (int) $mesDestinoId,
+                    'semana_id'   => (int) $semanaDestino->id, 
+                    'gestion_id'  => (int) $finalGestionId,
                     'fecha'       => $nuevaFecha->toDateString(),
                     'estado'      => 'programado',
                     'created_at'  => now(),
@@ -674,9 +675,10 @@ public function rotarPersonalPorMes(Request $request)
         }
 
         DB::commit();
+
         return response()->json([
             'status' => 'success', 
-            'message' => 'Rotación aplicada con éxito y usuarios fijos clonados correctamente.'
+            'message' => 'Rotación completada. Se migró la estructura de Hemodiálisis de forma pura.'
         ]);
 
     } catch (\Exception $e) {
