@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class User extends Authenticatable
 {
-    use HasFactory, Notifiable, HasApiTokens;
+   use HasFactory, Notifiable, HasApiTokens;
 
     protected $fillable = [
         'name',
@@ -52,14 +52,23 @@ class User extends Authenticatable
         return $this->belongsTo(Categoria::class);
     }
 
+
     
+// ... dentro de tu clase User ...
+
+// Método para verificar un solo rol
 public function hasRole(string $role): bool
 {
-    
-    return $this->roles()
-        ->where('roles.name', 'like', trim($role))
-        ->exists();
+    return $this->roles()->where('roles.name', $role)->exists();
 }
+
+// AGREGA ESTE MÉTODO QUE FALTA:
+public function hasAnyRole(array $roles): bool
+{
+    return $this->roles()->whereIn('roles.name', $roles)->exists();
+}
+
+// ... resto de tu código
 
 
     public function hasPermission(string $permission): bool

@@ -10,9 +10,11 @@ use App\Models\Servicio;
 use App\Models\Categoria;
 use App\Models\User;          
 use App\Models\NovedadLaboral;
+use App\Models\Configuracion;
 use Illuminate\Http\Request;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB; // IMPORTANTE: Para corregir el error "Class DB not found"
+use Barryvdh\DomPDF\Facade\Pdf;
 
 class TurnoAsignadoController extends Controller
 {
@@ -941,4 +943,179 @@ private function formatearDatosParaPDF($asignaciones)
     return $resultado;
 }
 
+
+public function cambiarBloqueoRol(Request $request)
+{
+    $servicioId = (int) $request->servicio_id;
+    $mesId      = (int) $request->mes_id;
+    
+    // Captura 'bloquear' enviado desde Angular (true/false)
+    $bloquear   = $request->input('bloquear'); 
+
+    // Obtener la gestión activa basándonos en el año actual automáticamente
+    $anoActual = date('Y');
+    $gestion = DB::table('gestiones')->where('año', $anoActual)->first();
+    
+    // Si no encuentra el año actual, busca la última guardada en HeidiSQL
+    $gestionId = $gestion ? $gestion->id : DB::table('gestiones')->orderBy('id', 'desc')->value('id');
+
+    if (!$gestionId) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'No se pudo determinar la gestión activa en el sistema del Hospital.'
+        ], 422);
+    }
+
+    try {
+        // Bloqueo inteligente usando updateOrInsert gracias al índice UNIQUE
+        DB::table('roles_estados')->updateOrInsert(
+            [
+                'servicio_id' => $servicioId,
+                'mes_id'      => $mesId,
+                'gestion_id'  => $gestionId
+            ],
+            [
+                'bloqueado'  => $bloquear ? 1 : 0,
+                'updated_at' => now()
+            ]
+        );
+
+        $mensaje = $bloquear 
+            ? 'El rol mensual ha sido BLOQUEADO. Se deshabilitó la descarga del reporte para usuarios comunes.' 
+            : 'El rol mensual ha sido DESBLOQUEADO con éxito.';
+
+        return response()->json([
+            'status' => 'success',
+            'message' => $mensaje,
+            'bloqueado' => $bloquear ? true : false
+        ]);
+
+    } catch (\Exception $e) {
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Error al procesar el cierre del periodo: ' . $e->getMessage()
+        ], 500);
+    }
+}
+
+// ====================================================================
+// 📄 2. REPORTE: GENERAR PDF MENSUAL IMPRIMIBLE 
+// ====================================================================
+
+public function obtenerPdfReporteMensual(Request $request)
+{
+    $request->validate([
+        'servicio_id' => 'required',
+        'mes_id' => 'required',
+    ]);
+
+    $user = $request->user();
+    if (!$user) {
+        return response()->json(['message' => 'No autenticado'], 401);
+    }
+
+    $servicioId = $request->input('servicio_id');
+    $mesId      = $request->input('mes_id');
+
+    // 2. Consulta de bloqueo (usando una sola variable consistente)
+    $estaBloqueado = DB::table('roles_estados')
+        ->where('servicio_id', $servicioId)
+        ->where('mes_id', $mesId)
+        ->where('bloqueado', 1)
+        ->exists();
+
+    // 3. Verificación de roles (si usas Spatie, hasAnyRole es correcto)
+    $esAdmin = $user->hasAnyRole(['super_admin', 'admin']);
+
+    // 4. Lógica de acceso
+    if ($estaBloqueado && !$esAdmin) {
+        return response()->json(['message' => 'Acceso Denegado'], 403);
+    }
+    
+    $semanasMes = DB::table('semanas')
+        ->where('mes_id', $mesId)
+        ->orderBy('numero_semana', 'asc')
+        ->get();
+
+    if ($semanasMes->isEmpty()) {
+        return response()->json(['status' => 'error', 'message' => 'No hay semanas configuradas.'], 422);
+    }
+
+    // 2. Consulta a la base de datos
+    $rolMaestroRaw = DB::table('turnos_asignados as ta')
+   ->join('users as u', 'ta.usuario_id', '=', 'u.id')
+->join('personas as p', 'p.user_id', '=', 'u.id')
+    ->join('categorias as cat', 'u.categoria_id', '=', 'cat.id')
+    ->join('turnos as t', 'ta.turno_id', '=', 't.id')
+    ->leftJoin('areas as a', 'ta.area_id', '=', 'a.id') 
+    ->where('ta.mes_id', $mesId)
+    ->where('ta.servicio_id', $servicioId)
+    ->where('ta.estado', '=', 'programado')
+    ->select(
+        'u.id as usuario_id',
+       'p.nombre_completo as nombre_usuario',
+        'p.tipo_salario',     
+        'cat.nombre as categoria_principal',
+        'ta.fecha',
+        't.nombre_turno',
+        't.hora_inicio',
+        't.hora_fin',
+        'a.nombre as nombre_area', 
+        'ta.semana_id'
+    )
+    ->get();
+
+    // --- AQUÍ ESTABA EL CÓDIGO FALTANTE ---
+    $personalTurnos = [];
+    foreach ($rolMaestroRaw as $registro) {
+        $userId = $registro->usuario_id;
+        
+        if (!isset($personalTurnos[$userId])) {
+            $personalTurnos[$userId] = [
+                'nombre'    => $registro->nombre_usuario,
+                'categoria' => $registro->categoria_principal,
+                'tipo_salario'  => $registro->tipo_salario,
+                'semanas'   => [] // Aquí se guardarán los turnos por semana
+
+                ];
+        }
+        
+        $personalTurnos[$userId]['semanas'][$registro->semana_id][] = [
+            'fecha' => $registro->fecha,
+            'turno' => $registro->nombre_turno,
+            'hora_inicio' => $registro->hora_inicio,
+            'hora_fin'    => $registro->hora_fin,
+            'area'  => $registro->nombre_area ?? 'N/A'
+
+        ];
+    }
+    // --------------------------------------
+
+    // 4. Lógica de cabecera
+    $nombreServicio = DB::table('servicios')->where('id', $servicioId)->value('nombre') ?? 'General';
+    $nombreMes = DB::table('meses')->where('id', $mesId)->value('nombre') ?? 'Mes Seleccionado';
+    
+    $semanaPrimera = $semanasMes->first();
+    $semanaUltima  = $semanasMes->last();
+    
+    $periodoExacto = "Del {$semanaPrimera->fecha_inicio} al {$semanaUltima->fecha_fin}";
+
+    $cabecera = [
+        'titulo'          => 'ROL MENSUAL DE TURNOS',
+        'servicio'        => strtoupper($nombreServicio),
+        // Se agregó un chequeo para evitar error si no hay datos
+        'categoria_vista' => !empty($personalTurnos) ? reset($personalTurnos)['categoria'] : 'N/A',
+        'mes'             => strtoupper($nombreMes),
+        'periodo_exacto'  => $periodoExacto
+    ];
+
+    // 5. Generar PDF
+    $pdf = Pdf::loadView('pdf.rol_mensual', [
+        'cabecera'       => $cabecera,
+        'personalTurnos' => $personalTurnos,
+        'semanas'        => $semanasMes
+    ])->setPaper('legal', 'landscape');
+
+    return $pdf->stream('reporte-mensual-turnos.pdf');
+}
 }

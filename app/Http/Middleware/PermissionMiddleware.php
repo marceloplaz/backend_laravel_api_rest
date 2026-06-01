@@ -22,28 +22,29 @@ public function handle(Request $request, Closure $next, ...$permissions): Respon
 {
     $user = $request->user();
     
-    // 1. Obtenemos los roles del usuario
+    // 1. Obtener los nombres de los roles del usuario logueado
     $rolesEnDB = \DB::table('roles')
         ->join('role_user', 'roles.id', '=', 'role_user.role_id')
         ->where('role_user.user_id', $user->id)
         ->pluck('name')
         ->toArray();
 
-    // 2. Procesamos los permisos/roles requeridos por la ruta
+    // 2. Procesar los roles requeridos, separando por '|' o ','
     $allPermissions = [];
     foreach ($permissions as $p) {
-        $allPermissions = array_merge($allPermissions, explode(',', $p));
+        // Reemplazamos el pipe '|' por una coma antes de hacer el explode
+        $rolesNormalizados = str_replace('|', ',', $p);
+        $allPermissions = array_merge($allPermissions, explode(',', $rolesNormalizados));
     }
 
-    // 3. Verificamos si hay coincidencia
+    // 3. Verificamos si hay coincidencia usando array_intersect
     $hasPermission = !empty(array_intersect($rolesEnDB, $allPermissions));
 
     if ($hasPermission) {
-        // ESTA ES LA LÍNEA MÁS IMPORTANTE: Permite que la petición siga al controlador
         return $next($request);
     }
 
-    // 4. Si no tiene permiso, lanzamos el error 403 real
+    // 4. Si falla, retornamos el error con los datos procesados para depurar
     return response()->json([
         'message' => 'No tienes permisos para acceder a esta ruta.',
         'tus_roles' => $rolesEnDB,

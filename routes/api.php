@@ -28,6 +28,7 @@ Route::prefix("v1")->group(function () {
       Route::get('reporte-mensual', [TurnoController::class, 'reporteMensual']);
      Route::post('/actualizar-estado', [ServicioController::class, 'actualizarEstadoVinculacion']);
 
+     
 
     Route::get('vacaciones/saldos-masivos', [VacacionController::class, 'obtenerSaldosMasivos']);
      Route::post('vacaciones/inicializar-personal', [VacacionController::class, 'inicializarPersonalReal']); 
@@ -66,9 +67,11 @@ Route::put('vacaciones/{id}/estado', [VacacionController::class, 'actualizarEsta
     Route::get('servicios-lista', [ServicioController::class, 'index']); 
     Route::get('categorias-lista', [CategoriaController::class, 'index']);
 
+    
+    
     Route::middleware('auth:sanctum')->group(function () {
 
-        // Definición de grupos de acceso (Sincronizado con Angular)
+    // Definición de grupos de acceso (Sincronizado con Angular)
         // En api.php
         // En routes/api.php
 $ROLES_ADMIN_FULL = 'super_admin,admin,admin_jefe_medico,admin_jefa_enfermeras,admin_jefa_servicios_generales';
@@ -79,12 +82,22 @@ $ROLES_TURNOS     = $ROLES_JEFATURAS  . ',jefa_enfermeras_servicio';
 // CORRECCIÓN: Se cambió 'tecnico' por 'responsable_tecnico' para coincidir con Angular
 $ROLES_TECNICO    = $ROLES_JEFATURAS  . ',responsable_tecnico';
 
+Route::prefix('turnos-asignados')->group(function () {
+            Route::put('/cambiar-bloqueo', [TurnoAsignadoController::class, 'cambiarBloqueoRol'])
+                ->middleware('role:super_admin|admin');
+        });
+    
+// El reporte mensual también apuntando a TurnoAsignadoController
+Route::get('/acciones-reporte/mensual-pdf', [TurnoAsignadoController::class, 'obtenerPdfReporteMensual']);
         // --- Perfil y Sesión ---
+        
+
         Route::get("/auth/profile", [AuthController::class, "funprofile"]);
         Route::post("/auth/logout", [AuthController::class, "funlogout"]);
         Route::get('persona/{id}', [PersonaController::class, 'show']);
         Route::get('servicios/inicio', [ServicioController::class, 'inicio']);
         Route::get('turnos/mis-turnos', [TurnoController::class, 'misTurnosMes']);
+        
         
        Route::prefix('reportes')->group(function () {
     // 🌟 Cambiamos TurnoAsignadoController por TurnoController
