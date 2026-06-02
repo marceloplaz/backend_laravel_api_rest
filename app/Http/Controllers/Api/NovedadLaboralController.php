@@ -18,8 +18,8 @@ public function index()
     return NovedadLaboral::with([
         'solicitante.persona', 
         'reemplazo.persona',
-        'asignacion.servicio', // Trae el servicio del turno original
-        'asignacion.turno'     // Trae el nombre del turno (Mañana/Tarde)
+        'asignacion.servicio', 
+        'asignacion.turno'    
     ])->orderBy('created_at', 'desc')->get();
 }     
 
@@ -36,18 +36,18 @@ public function permutarConNovedad(Request $request)
 
     try {
         return DB::transaction(function () use ($request) {
-            // 1. Obtener el turno origen
-            $turnoA = TurnoAsignado::findOrFail($request->id_origen);
+           
+            $turnoA = TurnoAsignado::findOrFail($request->id_origen); // obtenemos el turno origen
             $solicitanteId = $turnoA->usuario_id; 
             $reemplazoId = $request->usuario_reemplazo_id;
 
-            // 2. Ejecutar cambio de dueño
-            $turnoA->usuario_id = $reemplazoId;
+           
+            $turnoA->usuario_id = $reemplazoId; // cambio de turno a reemplazo
             $turnoA->estado = $request->tipo_novedad;
             $turnoA->save();
 
-            // 3. Devolución automática (Juan recupera un turno de Wilson)
-            $conDevolucion = 0;
+           
+            $conDevolucion = 0; // Devolución automática 
             if ($request->fecha_devolucion) {
                 $turnoDevolucion = TurnoAsignado::where('usuario_id', $reemplazoId)
                     ->whereDate('fecha', $request->fecha_devolucion)
@@ -60,7 +60,7 @@ public function permutarConNovedad(Request $request)
                 }
             }
 
-            // 4. Registrar la novedad
+            // Registrar la novedad 
             $novedad = NovedadLaboral::create([
                 'asignacion_id'          => $turnoA->id,
                 'tipo_novedad'           => $request->tipo_novedad,
@@ -75,7 +75,7 @@ public function permutarConNovedad(Request $request)
 
             $turnoA->refresh(); 
 
-// 2. Cargamos la novedad con TODAS las personas involucradas de nuevo
+// Cargamos la novedad con TODAS las personas involucradas 
 $novedadCompleta = NovedadLaboral::with([
     'solicitante.persona', 
     'reemplazo.persona'
@@ -101,9 +101,7 @@ public function marcarDevolucion($id)
 {
     try {
         $novedad = NovedadLaboral::findOrFail($id);
-        
-        // Cambio manual y guardado directo
-        $novedad->con_devolucion = 1; 
+         $novedad->con_devolucion = 1;   // Cambia y guarda  directo
         $novedad->save(); 
 
         return response()->json([
@@ -139,10 +137,7 @@ public function store(Request $request)
             'observacion_detalle' => $request->observacion,
         ]);
 
-        // 2. Opcional: Actualizar el estado del turno original
-        // DB::table('asignaciones')->where('id', $request->id_origen)->update(['estado' => 'cubierto_por_novedad']);
-
-        DB::commit();
+              DB::commit();
         return response()->json(['message' => 'Novedad registrada correctamente', 'data' => $novedad], 201);
 
     } catch (\Exception $e) {
@@ -152,7 +147,6 @@ public function store(Request $request)
 }
 public function show($id)
 {
-    // Buscamos la novedad con TODAS sus relaciones
     $novedad = NovedadLaboral::with([
         'solicitante.persona', 
         'reemplazo.persona', 
@@ -167,40 +161,35 @@ public function show($id)
     return response()->json($novedad);
 }
 
-// NovedadLaboralController.php
+
 public function registrarNovedad(Request $request)
 {
     DB::beginTransaction();
     try {
-        // 1. Crear el registro de la novedad (esto se queda igual para tu historial)
+        
         $novedad = NovedadLaboral::create([
             'asignacion_id'          => $request->asignacion_id,
             'tipo_novedad'           => $request->tipo_novedad,
-            'usuario_solicitante_id' => $request->usuario_actual_id, // SOFIA
-            'usuario_reemplazo_id'   => $request->usuario_reemplazo_id, // EDSON
+            'usuario_solicitante_id' => $request->usuario_actual_id, 
+            'usuario_reemplazo_id'   => $request->usuario_reemplazo_id, 
             'fecha_original'         => $request->fecha_turno,
             'con_devolucion'         => ($request->tipo_novedad == 'devolucion_turno') ? 1 : 0,
             'observacion_detalle'    => $request->observacion
         ]);
 
-        // 2. PASO CLAVE: Anotación Informativa (SIN CAMBIAR usuario_id)
         
-        // A. Turno del Solicitante (Sofia): Ella sigue en su fila, pero anotamos su reemplazo
         $turnoSolicitante = TurnoAsignado::find($request->asignacion_id);
-        // Usamos campos de estado o meta-datos para no mover la fila
+        
         $turnoSolicitante->estado = 'REEMPLAZADO'; 
-        // Si añadiste las columnas que sugerimos:
-        // $turnoSolicitante->reemplazo_por_id = $request->usuario_reemplazo_id;
+        
         $turnoSolicitante->save();
-
-        // B. Turno del Reemplazo (Edson): Buscamos su turno en la misma fecha
+       
         $turnoReemplazo = TurnoAsignado::where('usuario_id', $request->usuario_reemplazo_id)
             ->whereDate('fecha', $request->fecha_turno)
             ->first();
 
         if ($turnoReemplazo) {
             $turnoReemplazo->estado = 'CUBRIENDO_TURNO';
-            // $turnoReemplazo->cubriendo_a_id = $request->usuario_actual_id;
             $turnoReemplazo->save();
         }
 
@@ -219,13 +208,10 @@ public function registrarNovedad(Request $request)
 public function confirmar(Request $request, $id)
     {
         return DB::transaction(function () use ($id) {
-            // 1. Inicio de traza
-            Log::info("=== INICIANDO PROCESO DE CONFIRMACIÓN - NOVEDAD #$id ===");
-
+            Log::info("INICIANDO PROCESO DE CONFIRMACIÓN - NOVEDAD #$id");
             $novedad = NovedadLaboral::findOrFail($id);
 
-            // 2. Validación del turno original (El que Juan le da a Wilson)
-            if (!$novedad->turno_origen_id) {
+                if (!$novedad->turno_origen_id) {
                 Log::warning("Falla: Novedad #$id no tiene vinculado un turno_origen_id.");
                 return response()->json([
                     'res' => false,
@@ -243,14 +229,13 @@ public function confirmar(Request $request, $id)
                 ], 404);
             }
 
-            // 3. Ejecutar primer cambio: Juan -> Wilson (Jueves)
+           
             Log::info("Paso 1: Moviendo turno #{$turnoOrigen->id} del solicitante (ID:{$novedad->solicitante_id}) al reemplazo (ID:{$novedad->usuario_reemplazo_id})");
             
             $turnoOrigen->usuario_id = $novedad->usuario_reemplazo_id;
             $turnoOrigen->save();
 
-            // 4. Ejecutar segundo cambio: Wilson -> Juan (Domingo - Devolución)
-            if ($novedad->fecha_devolucion) {
+                if ($novedad->fecha_devolucion) {
                 Log::info("Paso 2: Buscando turno de Wilson para devolver el día: {$novedad->fecha_devolucion}");
 
                 $turnoDevolucion = TurnoAsignado::where('usuario_id', $novedad->usuario_reemplazo_id)
@@ -263,23 +248,14 @@ public function confirmar(Request $request, $id)
                     $turnoDevolucion->usuario_id = $novedad->solicitante_id;
                     $turnoDevolucion->save();
                 } else {
-                    Log::warning("Aviso: Wilson no tiene un turno asignado el {$novedad->fecha_devolucion}. No hay qué devolver.");
-                    
-                    // Si quieres que el proceso falle si no hay devolución, descomenta el return de abajo:
-                    /*
-                    return response()->json([
-                        'res' => false,
-                        'message' => "Se movió el primer turno, pero Wilson no tiene un turno asignado el domingo para devolver."
-                    ], 422);
-                    */
-                }
+                    Log::warning("Aviso: no tiene un turno asignado el {$novedad->fecha_devolucion}. No hay qué devolver.");
+                        }
             }
 
-            // 5. Finalizar Novedad
-            $novedad->con_devolucion = 1;
+             $novedad->con_devolucion = 1;
             $novedad->save();
 
-            Log::info("=== PROCESO COMPLETADO EXITOSAMENTE PARA NOVEDAD #$id ===");
+            Log::info("PROCESO COMPLETADO EXITOSAMENTE PARA NOVEDAD #$id");
 
             return response()->json([
                 'res' => true,

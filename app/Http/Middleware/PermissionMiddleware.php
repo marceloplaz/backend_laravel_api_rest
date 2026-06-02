@@ -14,10 +14,10 @@ class PermissionMiddleware
      * @param  \Closure  $next
      * @param  string  ...$permissions  <-- Cambiado a spread operator para recibir múltiples valores
      */
-    // App\Http\Middleware\PermissionMiddleware.php
 
-// App\Http\Middleware\PermissionMiddleware.php
-// App\Http\Middleware\PermissionMiddleware.php
+
+
+
 public function handle(Request $request, Closure $next, ...$permissions): Response
 {
     $user = $request->user();

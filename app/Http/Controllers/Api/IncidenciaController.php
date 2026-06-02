@@ -7,26 +7,21 @@ use Illuminate\Http\Request;
 
 class IncidenciaController extends Controller
 {
-    // Listar incidencias para el técnico
-    public function index() {
-        // Cargamos relaciones para saber quién reporta y en qué servicio
-        return IncidenciaTecnica::with(['usuario.persona', 'servicio'])
+       public function index() {
+             return IncidenciaTecnica::with(['usuario.persona', 'servicio']) // QUIEN REALIZA EL REPORTE Y SERVICIO, LISTAR
             ->orderBy('created_at', 'desc')
             ->get();
     }
 
     public function incidenciasCalendario(Request $request) {
         $request->validate(['mes' => 'required|integer']);
-
-        // Obtenemos incidencias de un mes específico
-        $incidencias = IncidenciaTecnica::whereMonth('fecha', $request->mes)
+            $incidencias = IncidenciaTecnica::whereMonth('fecha', $request->mes)
             ->select('id', 'fecha', 'estado', 'prioridad', 'servicio_id')
             ->get();
-
         return response()->json($incidencias);
     }
 
-    // Guardar reporte
+  
     public function store(Request $request) {
         $request->validate([
             'servicio_id' => 'required|exists:servicios,id',
@@ -36,30 +31,29 @@ class IncidenciaController extends Controller
         ]);
 
         $incidencia = IncidenciaTecnica::create([
-            'usuario_id'  => auth()->id() ?? 1, // Fallback a 1 si no hay auth para pruebas
+            'usuario_id'  => auth()->id() ?? 1, 
             'servicio_id' => $request->servicio_id,
             'fecha'       => $request->fecha,
             'descripcion' => $request->descripcion,
             'prioridad'   => $request->prioridad ?? 'media',
             'estado'      => 'pendiente',
         ]);
-
         return response()->json([
             "message" => "Reporte técnico enviado al equipo de mantenimiento",
             "data" => $incidencia
         ], 201);
     }
 
-    // Actualizar estado (cuando el técnico lo arregla)
+    // Actualizar estado (CUANDO EL PROBLEMA FUE RESUELTO)
     public function resolver(Request $request, $id) {
         $incidencia = IncidenciaTecnica::findOrFail($id);
         
         $incidencia->update([
-            'estado' => $request->estado, // 'pendiente', 'en_proceso' o 'solucionado'
+            'estado' => $request->estado, // pendiente, solucionado
             'observacion_tecnica' => $request->observacion_tecnica,
             'fecha_solucion' => $request->estado == 'solucionado' ? now() : null
         ]);
 
-        return response()->json(["message" => "Estado de incidencia actualizado correctamente"]);
+        return response()->json(["message" => "INCIDDENCIA SOLUCIONADA"]);
     }
 }

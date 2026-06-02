@@ -9,8 +9,8 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
 use Barryvdh\DomPDF\Facade\Pdf;
-use Maatwebsite\Excel\Facades\Excel; // <--- AÑADIR ESTA LÍNEA
-use App\Imports\PersonalImport;      // <--- AÑADIR ESTA LÍNEA
+use Maatwebsite\Excel\Facades\Excel; 
+use App\Imports\PersonalImport;      
 
 class PersonaController extends Controller 
 {

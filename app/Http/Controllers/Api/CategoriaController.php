@@ -13,18 +13,16 @@ class CategoriaController extends Controller
     try {
         $query = Categoria::query();
 
-        // Filtro por nivel: Validamos que si existe, sea un dato procesable
         if ($request->has('nivel') && $request->nivel !== null) {
             $query->where('nivel', $request->nivel);
         }
 
-        // Obtenemos los resultados ordenados
-        $categorias = $query->orderBy('nivel', 'asc')->get();
+         $categorias = $query->orderBy('nivel', 'asc')->get();
 
         return response()->json($categorias, 200);
 
     } catch (\Exception $e) {
-        // Esto te dirá en la pestaña 'Preview' de Chrome el error real (ej. columna no encontrada)
+     
         return response()->json([
             'message' => 'Error interno en el servidor al obtener categorías',
             'error' => $e->getMessage(),
@@ -35,7 +33,7 @@ class CategoriaController extends Controller
     public function show(Categoria $categoria)
 {
     return response()->json(
-        $categoria->load('users')
+        $categoria->load('users') //NECESITAMOS CAMBIAR POR NOMBRE_COPLETO
     );
 }
     public function store(CategoriaRequest $request)

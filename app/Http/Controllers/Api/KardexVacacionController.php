@@ -10,9 +10,7 @@ use Illuminate\Support\Facades\DB;
 
 class KardexVacacionController extends Controller
 {
-    /**
-     * Guarda un nuevo registro o actualiza uno existente en la Tarjeta de Control.
-     */
+    
     public function store(Request $request)
 {
     $request->validate([
@@ -24,8 +22,7 @@ class KardexVacacionController extends Controller
 
     return DB::transaction(function () use ($request) {
         
-        // 1. Obtener saldo actual bloqueando la fila para seguridad
-        $ultimoMovimiento = KardexVacacion::where('user_id', $request->user_id)
+        $ultimoMovimiento = KardexVacacion::where('user_id', $request->user_id)//SALDO ACTUAL DE VACACION
                             ->orderBy('id', 'desc')
                             ->lockForUpdate()
                             ->first();
@@ -34,12 +31,11 @@ class KardexVacacionController extends Controller
 
         $kardex = new KardexVacacion();
         $kardex->user_id     = $request->user_id;
-        $kardex->tipo         = $request->tipo; // Asegúrate de que esté en el $fillable del modelo
+        $kardex->tipo         = $request->tipo;
         $kardex->servicio_id = $request->servicio_id;
         $kardex->gestion_id  = $request->gestion_id;
 
         if ($request->tipo === 'INGRESO') {
-            // Lógica de Ingreso
             $kardex->gestiones_cumplidas = $request->gestiones_cumplidas;
             $kardex->cas_calificacion    = (int)$request->cas_calificacion;
             $kardex->dias_derecho        = (int)$request->dias_derecho;
@@ -83,8 +79,7 @@ class KardexVacacionController extends Controller
         $kardex->estado = 1;
         $kardex->save();
 
-        
-            
+                   
  if ($kardex->tipo === 'SALIDA') {
     $vacacionPrincipal = Vacacion::where('usuario_id', $kardex->usuario_id)->first();
 
@@ -92,10 +87,8 @@ class KardexVacacionController extends Controller
         $vacacionPrincipal->update([
             'fecha_inicio'    => $kardex->fecha_inicio,
             'fecha_fin'       => $kardex->fecha_fin,
-            // Importante: Restamos los días solicitados del saldo_total
-            // Asegúrate de que el campo en tu tabla 'vacaciones' se llame 'saldo_total'
             'saldo_total'     => $vacacionPrincipal->saldo_total - $kardex->dias_solicitados,
-        ]);
+        ]);                   //saldo total de vacacion-dias solicitados, se almacena en vacacion principal 
     }
 }
 
@@ -107,27 +100,23 @@ return response()->json([
     });
 }
 
-    /**
-     * Obtiene todo el historial de un usuario específico para mostrar en el modal.
-     */
-public function mostrarHistorial($user_id)
+    
+public function mostrarHistorial($user_id)// cargamos el historial
 {
-    // Obtenemos todos los campos del kardex para este usuario específico
-    $historial = KardexVacacion::with(['gestion', 'servicio','user.persona'])
+      $historial = KardexVacacion::with(['gestion', 'servicio','user.persona'])
         ->where('user_id', $user_id)
         ->orderBy('gestiones_cumplidas', 'desc')
         ->get();
 
     return response()->json([
         'res' => true,
-        'data' => $historial // Aquí viajan cas_calificacion, gestiones_cumplidas, saldo_restante, etc.
+        'data' => $historial // en data viaja los datos e historial
     ]);
 }
 
 public function destroy($id)
     {
         $registro = KardexVacacion::find($id);
-
         if (!$registro) {
             return response()->json([
                 'res' => false,
