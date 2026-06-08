@@ -17,6 +17,8 @@ use App\Http\Controllers\Api\IncidenciaController;
 use App\Http\Controllers\Api\VacacionController;
 use App\Http\Controllers\Api\NovedadLaboralController;
 use App\Http\Controllers\Api\KardexVacacionController;
+use App\Http\Controllers\Api\AreaController;
+
 Route::prefix("v1")->group(function () {
 
     // 🔓 RUTAS PÚBLICAS
@@ -27,22 +29,16 @@ Route::prefix("v1")->group(function () {
      Route::post('/personal/importar', [PersonaController::class, 'import']);
       Route::get('reporte-mensual', [TurnoController::class, 'reporteMensual']);
      Route::post('/actualizar-estado', [ServicioController::class, 'actualizarEstadoVinculacion']);
-
-     
-
     Route::get('vacaciones/saldos-masivos', [VacacionController::class, 'obtenerSaldosMasivos']);
      Route::post('vacaciones/inicializar-personal', [VacacionController::class, 'inicializarPersonalReal']); 
     Route::put('vacaciones/programar/{id}', [VacacionController::class, 'programarFechas']);
-
 
     Route::get('vacaciones/pendientes', [VacacionController::class, 'indexPendientes']);
    Route::get('vacaciones/general', [VacacionController::class, 'indexGeneral']);    
 
    Route::get('vacaciones/usuario/{id}', [VacacionController::class, 'indexByUsuario']);
-Route::put('vacaciones/{id}/aprobar', [VacacionController::class, 'aprobar']);
-Route::put('vacaciones/{id}/estado', [VacacionController::class, 'actualizarEstado']); // 🌟 ¡Ahora sí existirá aquí!
-
-
+    Route::put('vacaciones/{id}/aprobar', [VacacionController::class, 'aprobar']);
+    Route::put('vacaciones/{id}/estado', [VacacionController::class, 'actualizarEstado']);
 
    Route::prefix('vacaciones/kardex')->group(function () {
         Route::get('historial/{user_id}', [KardexVacacionController::class, 'mostrarHistorial']);
@@ -81,6 +77,14 @@ $ROLES_TURNOS     = $ROLES_JEFATURAS  . ',jefa_enfermeras_servicio';
 
 // CORRECCIÓN: Se cambió 'tecnico' por 'responsable_tecnico' para coincidir con Angular
 $ROLES_TECNICO    = $ROLES_JEFATURAS  . ',responsable_tecnico';
+
+
+Route::prefix('areas')->middleware('role:super_admin|admin')->group(function () {
+    // Ahora todas estas rutas requieren los roles especificados
+    Route::get('servicio/{servicioId}', [AreaController::class, 'getPorServicio']);
+    Route::post('/guardar', [AreaController::class, 'store']);
+    Route::delete('/{id}', [AreaController::class, 'destroy']);
+});
 
 Route::prefix('turnos-asignados')->group(function () {
             Route::put('/cambiar-bloqueo', [TurnoAsignadoController::class, 'cambiarBloqueoRol'])
@@ -153,7 +157,7 @@ Route::put('vacaciones/{id}/estado', [VacacionController::class, 'actualizarEsta
 
             Route::get('areas', [ServicioController::class, 'getAreas']);
           
-  Route::delete('usuario-servicio/servicio/{servicio_id}/usuario/{usuario_id}', [UsuarioServicioController::class, 'destroyByRelation']);
+            Route::delete('usuario-servicio/servicio/{servicio_id}/usuario/{usuario_id}', [UsuarioServicioController::class, 'destroyByRelation']);
           
             Route::apiResource('usuario-servicio', UsuarioServicioController::class);
 

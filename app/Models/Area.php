@@ -13,11 +13,18 @@ class Area extends Model
         'servicio_id',
         'nombre',
         'numero_consultorio',
+        'categoria_id',
         'activo'
     ];
 
     public function servicio()
     {
         return $this->belongsTo(Servicio::class);
+    }
+
+    public function categoria() {
+    
+    return $this->belongsTo(\App\Models\Categoria::class, 'categoria_id');
+    
     }
 }
