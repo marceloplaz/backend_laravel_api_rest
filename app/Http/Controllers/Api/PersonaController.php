@@ -14,6 +14,12 @@ use App\Imports\PersonalImport;
 
 class PersonaController extends Controller 
 {
+
+public function ejecutarSincronizacion(SincronizacionService $service) {
+    $service->sincronizarDesdeSqlServer();
+    return response()->json(['message' => 'Sincronización completada']);
+}
+
     public function index(Request $request)
     {
         $query = Persona::with('user'); 

@@ -30,7 +30,19 @@ return [
     */
 
     'connections' => [
-
+        
+'sqlsrv_externo' => [
+    'driver' => 'sqlsrv',
+    'host' => env('DB_HOST', '127.0.0.1'),
+    'port' => env('DB_PORT', '1433'),
+    'database' => env('DB_DATABASE', 'ENLACE'),
+    'username' => env('DB_USERNAME', 'sa'),
+    'password' => env('DB_PASSWORD', 'jugadordeunbit5049801'),
+    'charset' => 'utf8',
+    'prefix' => '',
+    'encrypt' => 'no',
+    'trust_server_certificate' => 'true',
+],
         'sqlite' => [
             'driver' => 'sqlite',
             'url' => env('DB_URL'),
@@ -114,6 +126,7 @@ return [
         ],
 
     ],
+
 
     /*
     |--------------------------------------------------------------------------
