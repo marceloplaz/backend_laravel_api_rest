@@ -36,16 +36,18 @@ class SincronizarPersonal extends Command
                     ['carnet_identidad' => $item->carnet_identidad],
                     [
                         'nombre_completo'           => $item->nombre_completo,
-                        'fecha_nacimiento'          => $item->fecha_nacimiento,
-                        'genero'                    => $item->genero,
-                        'telefono'                  => $item->telefono,
-                        'direccion'                 => $item->direccion,
-                        'tipo_trabajador'           => $item->tipo_trabajador,
-                        'nacionalidad'              => $item->nacionalidad,
-                        'tipo_salario'              => $item->tipo_salario,
-                        'numero_tipo_salario'       => $item->numero_tipo_salario,
-                        'fecha_ingreso_institucion' => $item->fecha_ingreso_institucion,
-                        'updated_at'                => now(),
+                'fecha_nacimiento'          => $item->fecha_nacimiento,
+                'genero'                    => $item->genero,
+                'telefono'                  => $item->telefono,
+                'direccion'                 => $item->direccion,
+                'tipo_trabajador'           => $item->tipo_trabajador,
+                'nacionalidad'              => $item->nacionalidad,
+                'tipo_salario'              => $item->tipo_salario,
+                'numero_tipo_salario'       => $item->numero_tipo_salario,
+                'fecha_ingreso_institucion' => $item->fecha_ingreso_institucion,
+                'user_id'                   => $item->user_id, 
+                'updated_at'                => now(),
+                'created_at'                => now(), 
                     ]
                 );
                 

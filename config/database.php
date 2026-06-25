@@ -30,19 +30,7 @@ return [
     */
 
     'connections' => [
-        
-'sqlsrv_externo' => [
-    'driver' => 'sqlsrv',
-    'host' => env('DB_HOST', '127.0.0.1'),
-    'port' => env('DB_PORT', '1433'),
-    'database' => env('DB_DATABASE', 'ENLACE'),
-    'username' => env('DB_USERNAME', 'sa'),
-    'password' => env('DB_PASSWORD', 'jugadordeunbit5049801'),
-    'charset' => 'utf8',
-    'prefix' => '',
-    'encrypt' => 'no',
-    'trust_server_certificate' => 'true',
-],
+
         'sqlite' => [
             'driver' => 'sqlite',
             'url' => env('DB_URL'),
@@ -74,6 +62,22 @@ return [
                 (PHP_VERSION_ID >= 80500 ? \Pdo\Mysql::ATTR_SSL_CA : \PDO::MYSQL_ATTR_SSL_CA) => env('MYSQL_ATTR_SSL_CA'),
             ]) : [],
         ],
+'sqlsrv_externo' => [
+    'driver' => 'sqlsrv',
+    'host' => env('DB_SQLSRV_HOST', 'localhost'),
+    'port' => env('DB_SQLSRV_PORT', '1433'),
+    'database' => env('DB_SQLSRV_DATABASE', 'ENLACE'),
+    'username' => env('DB_SQLSRV_USERNAME', 'sa'),
+    'password' => env('DB_SQLSRV_PASSWORD', 'jugadordeunbit5049801'),
+    'charset' => 'utf8',
+    'prefix' => '',
+    // --- ESTAS TRES LÍNEAS SON LAS QUE EVITAN EL ERROR DE SSL ---
+    'encrypt' => 'yes', 
+    'trust_server_certificate' => true,
+    'options' => [
+        PDO::SQLSRV_ATTR_FETCHES_NUMERIC_TYPE => true,
+    ],
+],
 
         'mariadb' => [
             'driver' => 'mariadb',

@@ -577,8 +577,7 @@ public function rotarPersonalPorMes(Request $request)
                 ->get();
 
             foreach ($turnosFilaOrigen as $turno) {
-                $esDomingo = \Carbon\Carbon::parse($turno->fecha)->dayOfWeek === 0;
-                if ($esDomingo) continue;
+                
 
                 $insercionesMaestras[] = [
                     'usuario_id'     => (int) $usuarioHerederoId, 
@@ -965,16 +964,12 @@ public function cambiarBloqueoRol(Request $request)
         ], 500);
     }
 }
-
-// ====================================================================
-// 📄 2. REPORTE: GENERAR PDF MENSUAL IMPRIMIBLE 
-// ====================================================================
-
 public function obtenerPdfReporteMensual(Request $request)
 {
     $request->validate([
-        'servicio_id' => 'required',
-        'mes_id' => 'required',
+        'servicio_id'  => 'required',
+        'mes_id'       => 'required',
+        'categoria_id' => 'required' 
     ]);
 
     $user = $request->user();
@@ -982,24 +977,24 @@ public function obtenerPdfReporteMensual(Request $request)
         return response()->json(['message' => 'No autenticado'], 401);
     }
 
-    $servicioId = $request->input('servicio_id');
-    $mesId      = $request->input('mes_id');
+    $servicioId  = $request->input('servicio_id');
+    $mesId       = $request->input('mes_id');
+    $categoriaId = $request->input('categoria_id');
 
-    // 2. Consulta de bloqueo (usando una sola variable consistente)
+    // Consulta de bloqueo
     $estaBloqueado = DB::table('roles_estados')
         ->where('servicio_id', $servicioId)
         ->where('mes_id', $mesId)
         ->where('bloqueado', 1)
         ->exists();
 
-    // 3. Verificación de roles (si usas Spatie, hasAnyRole es correcto)
     $esAdmin = $user->hasAnyRole(['super_admin', 'admin']);
 
-    // 4. Lógica de acceso
     if ($estaBloqueado && !$esAdmin) {
         return response()->json(['message' => 'Acceso Denegado'], 403);
     }
 
+    // 1. Obtener semanas del mes
     $semanasMes = DB::table('semanas')
         ->where('mes_id', $mesId)
         ->orderBy('numero_semana', 'asc')
@@ -1009,75 +1004,95 @@ public function obtenerPdfReporteMensual(Request $request)
         return response()->json(['status' => 'error', 'message' => 'No hay semanas configuradas.'], 422);
     }
 
-    // 2. Consulta a la base de datos
-    $rolMaestroRaw = DB::table('turnos_asignados as ta')
-   ->join('users as u', 'ta.usuario_id', '=', 'u.id')
-->join('personas as p', 'p.user_id', '=', 'u.id')
-    ->join('categorias as cat', 'u.categoria_id', '=', 'cat.id')
-    ->join('turnos as t', 'ta.turno_id', '=', 't.id')
-    ->leftJoin('areas as a', 'ta.area_id', '=', 'a.id') 
-    ->where('ta.mes_id', $mesId)
-    ->where('ta.servicio_id', $servicioId)
-    ->where('ta.estado', '=', 'programado')
-    ->select(
-        'u.id as usuario_id',
-       'p.nombre_completo as nombre_usuario',
-        'p.tipo_salario',     
-        'cat.nombre as categoria_principal',
-        'ta.fecha',
-        't.nombre_turno',
-        't.hora_inicio',
-        't.hora_fin',
-        'a.nombre as nombre_area', 
-        'ta.semana_id'
-    )
-    ->get();
+    // 2. OBTENER USUARIOS DEL SERVICIO FILTRADOS POR LA CATEGORÍA SELECCIONADA
+    $usuariosBase = DB::table('usuario_servicios as us')
+        ->join('users as u', 'us.usuario_id', '=', 'u.id')
+        ->join('personas as p', 'p.user_id', '=', 'u.id')
+        ->join('categorias as cat', 'u.categoria_id', '=', 'cat.id')
+        ->where('us.servicio_id', $servicioId)
+        ->where('u.categoria_id', $categoriaId) 
+        ->where('us.estado', 1)
+        ->select(
+            'u.id as usuario_id',
+            'p.nombre_completo as nombre_usuario',
+            'p.tipo_salario',     
+            'cat.nombre as categoria_principal'
+        )
+        ->orderBy('p.nombre_completo', 'asc')
+        ->get();
 
-    // --- AQUÍ ESTABA EL CÓDIGO FALTANTE ---
-    $personalTurnos = [];
-    foreach ($rolMaestroRaw as $registro) {
-        $userId = $registro->usuario_id;
-        
-        if (!isset($personalTurnos[$userId])) {
-            $personalTurnos[$userId] = [
-                'nombre'    => $registro->nombre_usuario,
-                'categoria' => $registro->categoria_principal,
-                'tipo_salario'  => $registro->tipo_salario,
-                'semanas'   => [] // Aquí se guardarán los turnos por semana
+    $userIdsFiltrados = $usuariosBase->pluck('usuario_id')->toArray();
 
-                ];
+    $turnosAgrupados = [];
+
+    // 3. OBTENER TURNOS: Filtro basado 100% en los usuarios (Quitamos ta.servicio_id)
+    if (!empty($userIdsFiltrados)) {
+        $turnosRaw = DB::table('turnos_asignados as ta')
+            ->join('turnos as t', 'ta.turno_id', '=', 't.id')
+            ->leftJoin('areas as a', 'ta.area_id', '=', 'a.id')
+            ->where('ta.mes_id', $mesId)
+            ->whereIn('ta.usuario_id', $userIdsFiltrados) // Buscamos a los usuarios directo en el mes
+            ->where('ta.estado', '=', 'programado')
+            ->select(
+                'ta.usuario_id',
+                'ta.fecha',
+                't.nombre_turno',
+                't.hora_inicio',
+                't.hora_fin',
+                't.duracion_horas', 
+                'a.nombre as nombre_area',
+                'ta.semana_id'
+            )
+            ->get();
+
+        // Agrupamos los turnos indexados por usuario y semana
+        foreach ($turnosRaw as $t) {
+            $turnosAgrupados[$t->usuario_id][$t->semana_id][] = [
+                'fecha'          => $t->fecha,
+                'turno'          => $t->nombre_turno,
+                'hora_inicio'    => $t->hora_inicio,
+                'hora_fin'       => $t->hora_fin,
+                'duracion_horas' => $t->duracion_horas, 
+                'area'           => $t->nombre_area ?? 'N/A'
+            ];
         }
-        
-        $personalTurnos[$userId]['semanas'][$registro->semana_id][] = [
-            'fecha' => $registro->fecha,
-            'turno' => $registro->nombre_turno,
-            'hora_inicio' => $registro->hora_inicio,
-            'hora_fin'    => $registro->hora_fin,
-            'area'  => $registro->nombre_area ?? 'N/A'
-
-        ];
     }
-    // --------------------------------------
 
-    // 4. Lógica de cabecera
-    $nombreServicio = DB::table('servicios')->where('id', $servicioId)->value('nombre') ?? 'General';
-    $nombreMes = DB::table('meses')->where('id', $mesId)->value('nombre') ?? 'Mes Seleccionado';
+    // 4. CONSTRUCCIÓN DE LA MATRIZ FINAL PARA EL BLADE
+    $personalTurnos = [];
+    foreach ($usuariosBase as $u) {
+        $userId = $u->usuario_id;
+        
+        $personalTurnos[$userId] = [
+            'nombre'       => $u->nombre_usuario,
+            'categoria'    => $u->categoria_principal,
+            'tipo_salario' => $u->tipo_salario,
+            'semanas'      => [] 
+        ];
+
+        foreach ($semanasMes as $sem) {
+            $personalTurnos[$userId]['semanas'][$sem->id] = $turnosAgrupados[$userId][$sem->id] ?? [];
+        }
+    }
+
+    // 5. Datos de cabecera estructurales
+    $nombreServicio  = DB::table('servicios')->where('id', $servicioId)->value('nombre') ?? 'General';
+    $nombreCategoria = DB::table('categorias')->where('id', $categoriaId)->value('nombre') ?? 'N/A';
+    $nombreMes       = DB::table('meses')->where('id', $mesId)->value('nombre') ?? 'Mes Seleccionado';
     
     $semanaPrimera = $semanasMes->first();
     $semanaUltima  = $semanasMes->last();
-    
     $periodoExacto = "Del {$semanaPrimera->fecha_inicio} al {$semanaUltima->fecha_fin}";
 
     $cabecera = [
         'titulo'          => 'ROL MENSUAL DE TURNOS',
         'servicio'        => strtoupper($nombreServicio),
-        // Se agregó un chequeo para evitar error si no hay datos
-        'categoria_vista' => !empty($personalTurnos) ? reset($personalTurnos)['categoria'] : 'N/A',
+        'categoria_vista' => strtoupper($nombreCategoria),
         'mes'             => strtoupper($nombreMes),
         'periodo_exacto'  => $periodoExacto
     ];
 
-    // 5. Generar PDF
+    // 6. Renderizar y transmitir el PDF
     $pdf = Pdf::loadView('pdf.rol_mensual', [
         'cabecera'       => $cabecera,
         'personalTurnos' => $personalTurnos,
