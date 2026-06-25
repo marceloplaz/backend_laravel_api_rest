@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <title>Reporte Semanal de Asistencia</title>
+    <title>Reporte Mensual de Turnos</title>
     <style>
         body { font-family: 'Helvetica', sans-serif; font-size: 10px; color: #333; }
         .header { text-align: center; margin-bottom: 10px; }
@@ -17,6 +17,8 @@
         .user-name { font-weight: bold; font-size: 10px; }
         .user-cat { font-size: 9px; color: #555; }
         
+        .turno-container { margin-bottom: 3px; padding-bottom: 3px; border-bottom: 1px dashed #b2dfdb; }
+        .turno-container:last-child { border-bottom: none; margin-bottom: 0; padding-bottom: 0; }
         .turno-box { font-size: 7px; line-height: 1.1; color: #00796b; }
         .area-text { font-weight: bold; font-size: 7px; color: #333; }
     </style>
@@ -54,42 +56,42 @@
                         <div class="user-name">{{ strtoupper($personal['nombre']) }}</div>
                         <div class="user-cat">{{ $personal['categoria'] }}</div>
                         <div style="font-size: 8px; color: #d84315; font-weight: bold;">
-                        {{ $personal['tipo_salario'] }}
+                            {{ $personal['tipo_salario'] }}
                         </div>
-
                     </td>
 
-                    @php $diasTotales = 0; $horasTotales = 0; @endphp
+                    @php 
+                        $diasTotales = 0; 
+                        $horasTotales = 0; 
+                    @endphp
                     
+                    {{-- Iteramos de Lunes (1) a Domingo (7) --}}
                     @for ($dia = 1; $dia <= 7; $dia++)
+                        @php
+                            // Extraemos todos los turnos que coincidan con este día de la semana a lo largo del mes
+                            $turnosDelDia = $personal['dias_semana'][$dia] ?? [];
+                        @endphp
                         <td>
-                            @php 
-                                $turnoEncontrado = null;
-                                foreach ($personal['semanas'] as $semana) {
-                                    foreach ($semana as $t) {
-                                        if (\Carbon\Carbon::parse($t['fecha'])->dayOfWeekIso == $dia) {
-                                            $turnoEncontrado = $t;
-                                        }
-                                    }
-                                }
-                            @endphp
-                            
-                            @if($turnoEncontrado)
-    <div class="turno-box">
-        <div class="area-text">{{ strtoupper($turnoEncontrado['area']) }}</div>
-        <div style="font-weight: bold;">{{ strtoupper($turnoEncontrado['turno']) }}</div>
-        <div>
-            {{ \Carbon\Carbon::parse($turnoEncontrado['hora_inicio'])->format('H:i') }} - 
-            {{ \Carbon\Carbon::parse($turnoEncontrado['hora_fin'])->format('H:i') }}
-        </div>
-    </div>
-    @php 
-        $diasTotales++; 
-        $horasTotales += 6; 
-    @endphp
-@else
-    <span style="color: #ccc;">-</span>
-@endif
+                            @if(!empty($turnosDelDia))
+                                @foreach($turnosDelDia as $t)
+                                    @php 
+                                        $diasTotales++; 
+                                        // Sumamos el valor exacto de la columna duracion_horas de la BD
+                                        $horasTotales += floatval($t['duracion_horas']); 
+                                    @endphp
+                                    <div class="turno-container">
+                                        <div class="turno-box">
+                                            <div class="area-text">{{ strtoupper($t['area']) }}</div>
+                                            <div style="font-weight: bold;">{{ strtoupper($t['turno']) }}</div>
+                                            <div>
+                                                {{ substr($t['hora_inicio'], 0, 5) }} - {{ substr($t['hora_fin'], 0, 5) }}
+                                            </div>
+                                        </div>
+                                    </div>
+                                @endforeach
+                            @else
+                                <span style="color: #ccc;">-</span>
+                            @endif
                         </td>
                     @endfor
 
