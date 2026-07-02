@@ -371,16 +371,17 @@ $resultado = $equipo->map(function($user) use ($semana_id) {
     ];
 });
             return response()->json([
-                'status' => 'success',
-                'equipo_visible' => $resultado
-            ], 200);
+            'status' => 'success',
+            'equipo_visible' => $resultado
+        ], 200, [], JSON_UNESCAPED_UNICODE); // <--- SE AGREGO EN ESTA PARTE
 
-        } catch (\Exception $e) {
-            return response()->json([
-                'status' => 'error',
-                'message' => $e->getMessage()
-            ], 500);
-        }
+
+         } catch (\Exception $e) {
+        return response()->json([
+            'status' => 'error',
+            'message' => $e->getMessage()
+        ], 500);
+    }
     }
 
     /**

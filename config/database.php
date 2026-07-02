@@ -62,22 +62,25 @@ return [
                 (PHP_VERSION_ID >= 80500 ? \Pdo\Mysql::ATTR_SSL_CA : \PDO::MYSQL_ATTR_SSL_CA) => env('MYSQL_ATTR_SSL_CA'),
             ]) : [],
         ],
-'sqlsrv_externo' => [
+
+        'sqlsrv_externo' => [
     'driver' => 'sqlsrv',
     'host' => env('DB_SQLSRV_HOST', 'localhost'),
     'port' => env('DB_SQLSRV_PORT', '1433'),
     'database' => env('DB_SQLSRV_DATABASE', 'ENLACE'),
     'username' => env('DB_SQLSRV_USERNAME', 'sa'),
     'password' => env('DB_SQLSRV_PASSWORD', 'jugadordeunbit5049801'),
-    'charset' => 'utf8',
+    'charset' => 'utf8mb4', // <--- CAMBIAR 'utf8' POR 'utf8mb4'
     'prefix' => '',
-    // --- ESTAS TRES LÍNEAS SON LAS QUE EVITAN EL ERROR DE SSL ---
     'encrypt' => 'yes', 
     'trust_server_certificate' => true,
     'options' => [
         PDO::SQLSRV_ATTR_FETCHES_NUMERIC_TYPE => true,
+        // --- ESTA LÍNEA OBLIGA AL DRIVER PDO_SQLSRV A TRATAR TODO EN UTF-8 ---
+        PDO::SQLSRV_ATTR_ENCODING => PDO::SQLSRV_ENCODING_UTF8, 
     ],
 ],
+
 
         'mariadb' => [
             'driver' => 'mariadb',

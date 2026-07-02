@@ -16,7 +16,11 @@ class Servicio extends Model
         'descripcion', 
         'cantidad_pacientes'
     ]; 
-    
+    public function turnosAsignados()
+{
+    // Esto mapea la tabla 'turnos_asignados' usando la columna 'servicio_id' que vimos en tu captura
+    return $this->hasMany(\App\Models\TurnoAsignado::class, 'servicio_id'); 
+}
     // USAR SOLO ESTA VERSIÓN DE USUARIOS
     public function usuarios()
     {

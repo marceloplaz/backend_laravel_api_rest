@@ -10,7 +10,9 @@ use App\Http\Requests\ServicioStoreRequest;
 use App\Http\Requests\ServicioUpdateRequest;
 use App\Http\Resources\UsuarioServicioResource;
 use App\Http\Resources\ServicioResource;
+use Carbon\Carbon;
 class ServicioController extends Controller
+
 {
     // LISTAR
 
@@ -32,10 +34,7 @@ class ServicioController extends Controller
         ]);
     }
 
-    /**
- * Obtener los servicios vinculados al usuario para la pantalla de inicio.
- */
-public function inicio()
+  public function inicio()
 {
     $usuario = auth()->user();
 
@@ -43,35 +42,33 @@ public function inicio()
         return response()->json(['message' => 'No autorizado'], 401);
     }
 
-    // Capturamos el mes y año actuales para buscar sus guardias del mes
-    $mesActual = Carbon::now()->month;
-    $anioActual = Carbon::now()->year;
+    // Capturamos el mes y año actuales dinámicamente
+    $mesActual = \Carbon\Carbon::now()->month;
+    $anioActual = \Carbon\Carbon::now()->year;
 
-    // Buscamos todos los servicios que cumplan cualquiera de las dos condiciones
     $servicios = Servicio::where(function($query) use ($usuario) {
-            // Condición 1: Servicios donde tiene vinculación fija activa (Tu lógica original)
+            // Condición 1: Servicios vinculados fijos al usuario
             $query->whereHas('usuarios', function ($q) use ($usuario) {
-                $q->where('user_id', $usuario->id)
-                  ->where('usuario_servicio.estado', 1); // Ajusta 'usuario_servicio' si tu tabla pivote se llama distinto
+                // CORREGIDO: Se cambió 'user_id' por 'usuario_id' para que coincida con tu tabla usuario_servicios
+                $q->where('usuario_servicios.usuario_id', $usuario->id);
             });
         })
+        // Condición 2: Filtro por Usuario, MES y AÑO en turnos asignados
         ->orWhereHas('turnosAsignados', function ($query) use ($usuario, $mesActual, $anioActual) {
-            // Condición 2: Servicios donde tiene turnos/guardias programadas este mes
-            // ⚠️ NOTA: Verifica si tu relación en el modelo 'Servicio' hacia los turnos asignados 
-            // se llama 'turnosAsignados' o simplemente 'turnos' y cámbialo aquí si es necesario.
-            $query->where('user_id', $usuario->id)
+            $query->where('turnos_asignados.usuario_id', $usuario->id)
                   ->whereMonth('fecha', $mesActual)
                   ->whereYear('fecha', $anioActual);
         })
         ->select('id', 'nombre')
-        ->distinct() // Evita duplicados si está vinculado y además tiene turnos en el mismo servicio
+        ->distinct() 
         ->get();
 
     return response()->json([
         'success' => true,
         'data' => $servicios
-    ], 200);
+    ], 200, [], JSON_UNESCAPED_UNICODE);
 }
+
 
     public function index()
     {
