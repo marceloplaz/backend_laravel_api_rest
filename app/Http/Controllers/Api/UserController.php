@@ -11,7 +11,36 @@ use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB; // Para transacciones
 class UserController extends Controller
 {
-    /**
+ 
+/**
+ * Busca personal en tiempo real para asignación de permisos.
+ */
+public function buscarParaAsignacion(Request $request)
+{
+    $termino = $request->query('q');
+    
+    if (!$termino) {
+        return response()->json(['status' => 'error', 'message' => 'Término vacío'], 400);
+    }
+
+    // Buscamos coincidencia en la tabla users o en su relación con personas
+    $usuarios = \App\Models\User::where('name', 'LIKE', "%{$termino}%")
+        ->orWhere('email', 'LIKE', "%{$termino}%")
+        ->orWhereHas('persona', function($query) use ($termino) {
+            $query->where('nombre_completo', 'LIKE', "%{$termino}%");
+        })
+        ->with(['persona', 'roles.permissions', 'roles.servicios'])
+        ->take(6)
+        ->get();
+
+    return response()->json([
+        'status' => 'success',
+        'usuarios' => $usuarios
+    ], 200);
+}
+
+
+/**
      * Muestra una lista de usuarios con sus turnos y categorías.
      */
 public function index(Request $request)
@@ -30,6 +59,9 @@ public function index(Request $request)
 
     return response()->json($usuarios, 200);
 }
+
+
+
 
 public function store(Request $request)
     {

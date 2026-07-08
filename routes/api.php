@@ -225,8 +225,13 @@ Route::put('vacaciones/{id}/estado', [VacacionController::class, 'actualizarEsta
         // =========================================================
        
         Route::middleware('jugadordeunbit:super_admin,admin')->group(function () {
+        Route::prefix('gestion-accesos')->group(function () {
+        Route::get('inicializar', [App\Http\Controllers\Api\RoleController::class, 'getDatosIniciales']);
+        Route::get('buscar-empleado', [App\Http\Controllers\Api\UserController::class, 'buscarParaAsignacion']);
+        Route::post('guardar-matriz', [App\Http\Controllers\Api\RoleController::class, 'guardarMatrizAccesos']);
+    });    
             
-            
+
             
             // Configuración de turnos vinculados por servicio
             Route::prefix('servicios')->group(function () {

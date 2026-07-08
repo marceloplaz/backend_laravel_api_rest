@@ -67,7 +67,7 @@ return [
     'driver' => 'sqlsrv',
     'host' => env('DB_SQLSRV_HOST', 'localhost'),
     'port' => env('DB_SQLSRV_PORT', '1433'),
-    'database' => env('DB_SQLSRV_DATABASE', 'ENLACE'),
+    'database' => env('DB_SQLSRV_DATABASE', 'VW_PERSONA_SINCRO_INTEGRADA'),
     'username' => env('DB_SQLSRV_USERNAME', 'sa'),
     'password' => env('DB_SQLSRV_PASSWORD', 'jugadordeunbit5049801'),
     'charset' => 'utf8mb4', // <--- CAMBIAR 'utf8' POR 'utf8mb4'

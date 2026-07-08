@@ -16,9 +16,23 @@ class PersonaController extends Controller
 {
 
 public function ejecutarSincronizacion(SincronizacionService $service) {
-    $service->sincronizarDesdeSqlServer();
-    return response()->json(['message' => 'Sincronización completada']);
+    try {
+        $service->sincronizarDesdeSqlServer();
+        return response()->json([
+            'status' => 'success',
+            'message' => 'Sincronización completada con éxito.'
+        ], 200);
+    } catch (\Exception $e) {
+        
+        \Log::error("Error en sincronización: " . $e->getMessage());
+        
+        return response()->json([
+            'status' => 'error',
+            'message' => 'Hubo un error al sincronizar. Por favor, revise los logs.'
+        ], 500);
+    }
 }
+
 
     public function index(Request $request)
     {
@@ -77,7 +91,6 @@ public function ejecutarSincronizacion(SincronizacionService $service) {
                     "categoria_id" => $request->categoria_id, 
                 ]);
 
-                // Asignar Roles (Sync para evitar duplicados en tabla pivot)
                 if ($request->has('roles')) {
                     $usuario->roles()->sync($request->roles);
                 }

@@ -35,34 +35,36 @@ $user->roles()->sync([$request->rol_id]);
     ], 201);
 }
 
-    public function funLogin(Request $request)
-    {
-        $credentials = $request->validate([
-            "email" => "required|email",
-            "password" => "required"
-        ]);
+   public function funLogin(Request $request)
+{
+    $credentials = $request->validate([
+        "email" => "required|email",
+        "password" => "required"
+    ]);
 
-        if (!Auth::attempt($credentials)) {
-            return response()->json(["message" => "Usuario o contraseña no coinciden"], 401);
-        }
-
-        $user = Auth::user(); 
-        $token = $user->createToken('auth_token')->plainTextToken;
-        $user->load('roles');
-
-        $mensaje = "¡Bienvenido, " . $user->name . "!";
-        if ($user->must_change_password) {
-            $mensaje = "Hola " . $user->name . ". Por seguridad, recuerde cambiar su contraseña inicial por una nueva.";
-        }
-
-        return response()->json([
-            "access_token" => $token,
-            "token_type"   => "Bearer",
-            "user"         => new UserResource($user),
-            "must_change_password" => (bool)$user->must_change_password,
-            "message"      => $mensaje 
-        ], 200);
+    if (!Auth::attempt($credentials)) {
+        return response()->json(["message" => "Usuario o contraseña no coinciden"], 401);
     }
+    
+    $user = Auth::user(); 
+    $token = $user->createToken('auth_token')->plainTextToken;
+    
+    // 🏥 Cargamos eficientemente las relaciones necesarias para el nuevo UserResource
+    $user->load(['roles.servicios', 'persona']);
+
+    $mensaje = "¡Bienvenido, " . $user->name . "!";
+    if ($user->must_change_password) {
+        $mensaje = "Hola " . $user->name . ". Por seguridad, recuerde cambiar su contraseña inicial por una nueva.";
+    }
+
+    return response()->json([
+        "access_token"         => $token,
+        "token_type"           => "Bearer",
+        "user"                 => new UserResource($user), // Generará la respuesta sin el email y con el array de servicios
+        "must_change_password" => (bool)$user->must_change_password,
+        "message"              => $mensaje 
+    ], 200);
+}
 
     public function funprofile(Request $request)
     {

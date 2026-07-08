@@ -33,8 +33,7 @@ class ServicioController extends Controller
             'data' => $areas
         ]);
     }
-
-  public function inicio()
+public function inicio()
 {
     $usuario = auth()->user();
 
@@ -42,25 +41,26 @@ class ServicioController extends Controller
         return response()->json(['message' => 'No autorizado'], 401);
     }
 
-    // Capturamos el mes y año actuales dinámicamente
     $mesActual = \Carbon\Carbon::now()->month;
     $anioActual = \Carbon\Carbon::now()->year;
 
-    $servicios = Servicio::where(function($query) use ($usuario) {
-            // Condición 1: Servicios vinculados fijos al usuario
+    $servicios = Servicio::query()
+        ->where(function($query) use ($usuario) {
             $query->whereHas('usuarios', function ($q) use ($usuario) {
-                // CORREGIDO: Se cambió 'user_id' por 'usuario_id' para que coincida con tu tabla usuario_servicios
+                // Especificamos la tabla y columna correctamente
                 $q->where('usuario_servicios.usuario_id', $usuario->id);
             });
         })
-        // Condición 2: Filtro por Usuario, MES y AÑO en turnos asignados
-        ->orWhereHas('turnosAsignados', function ($query) use ($usuario, $mesActual, $anioActual) {
-            $query->where('turnos_asignados.usuario_id', $usuario->id)
+        ->orWhere(function($query) use ($usuario, $mesActual, $anioActual) {
+            $query->whereHas('turnosAsignados', function ($q) use ($usuario, $mesActual, $anioActual) {
+                // Especificamos la tabla y columna correctamente
+                $q->where('turnos_asignados.usuario_id', $usuario->id)
                   ->whereMonth('fecha', $mesActual)
                   ->whereYear('fecha', $anioActual);
+            });
         })
-        ->select('id', 'nombre')
-        ->distinct() 
+        ->select('servicios.id', 'servicios.nombre')
+        ->distinct()
         ->get();
 
     return response()->json([

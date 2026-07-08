@@ -48,10 +48,10 @@ public function usuariosActivos()
     }
 public function vacaciones() {
     return $this->hasMany(Vacacion::class, 'servicio_id');
-}
-public function kardexVacaciones(): HasMany
+}public function kardexVacaciones()
 {
-    return $this->hasMany(KardexVacacion::class, 'user_id');
+    // Cambia 'user_id' por 'servicio_id'
+    return $this->hasMany(KardexVacacion::class, 'servicio_id');
 }
 
 }
