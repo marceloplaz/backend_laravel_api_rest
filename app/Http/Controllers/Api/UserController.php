@@ -8,7 +8,7 @@ use App\Models\Persona;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Facades\DB; // Para transacciones
+use Illuminate\Support\Facades\DB; 
 class UserController extends Controller
 {
  
@@ -35,7 +35,7 @@ public function buscarParaAsignacion(Request $request)
             'roles.servicios:id,nombre',
             'roles.categorias:id,nombre' 
         ])
-        ->take(3) // ⚡ Bajamos el límite a 5 registros para una respuesta ultra rápida
+        ->take(3) 
         ->get();
 
     return response()->json([
