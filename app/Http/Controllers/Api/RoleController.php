@@ -9,9 +9,7 @@ use Illuminate\Support\Facades\DB;
 
 class RoleController extends Controller
 {
-    /**
-     * Display a listing of the resource.
-     */
+    
    public function index()
 {
     return Role::with('permissions')->get();
@@ -24,7 +22,7 @@ public function getDatosIniciales()
             'status' => 'success',
             'roles' => \App\Models\Role::where('estado', 1)->get(),
             'servicios' => \App\Models\Servicio::all(['id', 'nombre']),
-            // Usamos los campos reales de tu tabla 'permissions'
+            'categorias' => \App\Models\Categoria::all(['id', 'nombre']),            
             'permisos' => \App\Models\Permission::all(['id', 'label', 'subject', 'action'])
         ], 200);
     } catch (\Exception $e) {
@@ -37,8 +35,9 @@ public function guardarMatrizAccesos(Request $request)
     $request->validate([
         'user_id' => 'required|exists:users,id',
         'role_id' => 'required|exists:roles,id',
-        'servicios_ids' => 'array', // IDs para la tabla role_servicio
-        'permisos_ids' => 'array',  // IDs para la tabla permission_role
+        'categorias_ids' => 'array',
+        'servicios_ids' => 'array', 
+        'permisos_ids' => 'array',  
     ]);
 
     DB::beginTransaction();
@@ -46,16 +45,15 @@ public function guardarMatrizAccesos(Request $request)
         $user = \App\Models\User::findOrFail($request->user_id);
         $role = \App\Models\Role::findOrFail($request->role_id);
 
-        // 1. Asignar el Rol al Usuario (Tabla: role_user)
-        // sync() elimina registros previos del usuario en esta tabla intermediaria y deja solo el nuevo
         $user->roles()->sync([$request->role_id]);
-
-        // 2. Sincronizar los Servicios vinculados a este Rol (Tabla: role_servicio)
+      
         if ($request->has('servicios_ids')) {
             $role->servicios()->sync($request->servicios_ids);
         }
-
-        // 3. Sincronizar los Permisos directos del Rol (Tabla: permission_role)
+        if ($request->has('categorias_ids')) {
+                $role->categorias()->sync($request->categorias_ids);
+            }
+     
         if ($request->has('permisos_ids')) {
             $role->permissions()->sync($request->permisos_ids);
         }

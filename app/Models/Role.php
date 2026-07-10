@@ -14,6 +14,7 @@ class Role extends Model
         'descripcion'
     ];
 
+
     public function users()
     {
         return $this->belongsToMany(User::class);
@@ -23,8 +24,18 @@ class Role extends Model
 {
     return $this->belongsToMany(Servicio::class, 'role_servicio');
 }
+
+    public function categorias()
+{
+    return $this->belongsToMany(Categoria::class, 'categoria_role');
+}
     public function permissions()
     {
         return $this->belongsToMany(Permission::class);
     }
+    public function categoria()
+     {
+       return $this->belongsToMany(Categoria::class, 'categoria_role');
+    }
+
 }

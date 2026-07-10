@@ -14,13 +14,16 @@ class UserResource extends JsonResource
             return $role->servicios ? $role->servicios->pluck('id') : [];
         })->unique()->values()->toArray();
 
+        $categoriasIds = $this->roles->flatMap(function ($role) {
+        return $role->categorias ? $role->categorias->pluck('id') : [];
+         })->unique()->values()->toArray();
+
         return [
             "id"                  => $this->id,
             "nombre_usuario"      => $this->name,
-            "rol_nombre"          => $this->roles->first()->name ?? 'Sin Rol Asignado', 
-                
+            "rol_nombre"          => $this->roles->first()->name ?? 'Sin Rol Asignado',               
             "servicios"           => $serviciosIds, 
-            
+            "categorias"          => $categoriasIds,
             "detalles_personales" => new PersonaResource($this->whenLoaded('persona') ?? $this->persona)
         ];
     }

@@ -12,25 +12,30 @@ use Illuminate\Support\Facades\DB; // Para transacciones
 class UserController extends Controller
 {
  
-/**
- * Busca personal en tiempo real para asignación de permisos.
- */
+
 public function buscarParaAsignacion(Request $request)
 {
     $termino = $request->query('q');
-    
-    if (!$termino) {
-        return response()->json(['status' => 'error', 'message' => 'Término vacío'], 400);
+    if (!$termino || strlen($termino) < 3) {
+        return response()->json([
+            'status' => 'success', 
+            'usuarios' => []
+        ], 200);
     }
-
-    // Buscamos coincidencia en la tabla users o en su relación con personas
+ 
     $usuarios = \App\Models\User::where('name', 'LIKE', "%{$termino}%")
         ->orWhere('email', 'LIKE', "%{$termino}%")
         ->orWhereHas('persona', function($query) use ($termino) {
             $query->where('nombre_completo', 'LIKE', "%{$termino}%");
         })
-        ->with(['persona', 'roles.permissions', 'roles.servicios'])
-        ->take(6)
+        ->with([
+            'persona:id,user_id,nombre_completo,carnet_identidad', 
+            'roles:id,name', 
+            'roles.permissions:id,label', 
+            'roles.servicios:id,nombre',
+            'roles.categorias:id,nombre' 
+        ])
+        ->take(3) // ⚡ Bajamos el límite a 5 registros para una respuesta ultra rápida
         ->get();
 
     return response()->json([
