@@ -65,7 +65,7 @@ Route::prefix("v1")->group(function () {
     // Definición de grupos de acceso (Sincronizado con Angular)
         // En api.php
         // En routes/api.php
-$ROLES_ADMIN_FULL = 'super_admin,admin,admin_jefe_medico,admin_jefa_enfermeras,admin_jefa_servicios_generales';
+$ROLES_ADMIN_FULL = 'super_admin,admin,admin_jefe_medico,admin_jefa_enfermeras,admin_jefa_servicios_generales,jefa_enfermeras';
 $ROLES_JEFATURAS  = $ROLES_ADMIN_FULL . ',jefe_medico_servicio,jefa_enfermeras_servicio,jefe_servicio';
 
 $ROLES_TURNOS     = $ROLES_JEFATURAS  . ',jefa_enfermeras_servicio'; 
