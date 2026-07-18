@@ -234,9 +234,10 @@ public function reporteSemanal(Request $request, $semana_id)
         'usuarios'  => $usuarios 
     ];
 
-    $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.reporteSemanal', $data)
-                ->setPaper('a4', 'landscape');
+  $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.reporteSemanal', $data)
+                  ->setPaper('a4', 'landscape');
     
+    // Devolvemos el stream, que es lo ideal para visualización y descarga
     return $pdf->stream("Reporte_Semanal_{$servicio->nombre}.pdf");
 }
 
@@ -309,6 +310,13 @@ public function getEquipoFiltrado(Request $request)
             $servicio_id = $request->query('servicio_id');
             $categoria_id = $request->query('categoria_id');
             $semana_id = $request->query('semana_id');
+            $mes_id = $request->query('mes_id');
+
+            $estaBloqueado = DB::table('roles_estados')
+            ->where('servicio_id', $servicio_id)
+            ->where('mes_id', $mes_id)
+            ->where('bloqueado', 1)
+            ->exists();
 
             // 1. Obtener los usuarios del servicio/categoría
             $query = User::whereHas('servicios', function($q) use ($servicio_id) {
@@ -372,7 +380,9 @@ $resultado = $equipo->map(function($user) use ($semana_id) {
 });
             return response()->json([
             'status' => 'success',
-            'equipo_visible' => $resultado
+            'equipo_visible' => $resultado,
+            'isBloqueado' => $estaBloqueado
+
         ], 200, [], JSON_UNESCAPED_UNICODE); // <--- SE AGREGO EN ESTA PARTE
 
 
@@ -911,20 +921,14 @@ private function formatearDatosParaPDF($asignaciones)
     return $resultado;
 }
 
-
+//bloqueo de reporte mensual de pdf
 public function cambiarBloqueoRol(Request $request)
 {
     $servicioId = (int) $request->servicio_id;
     $mesId      = (int) $request->mes_id;
-    
-    // Captura 'bloquear' enviado desde Angular (true/false)
     $bloquear   = $request->input('bloquear'); 
-
-    // Obtener la gestión activa basándonos en el año actual automáticamente
     $anoActual = date('Y');
-    $gestion = DB::table('gestiones')->where('año', $anoActual)->first();
-    
-    // Si no encuentra el año actual, busca la última guardada en HeidiSQL
+    $gestion = DB::table('gestiones')->where('año', $anoActual)->first();        
     $gestionId = $gestion ? $gestion->id : DB::table('gestiones')->orderBy('id', 'desc')->value('id');
 
     if (!$gestionId) {
@@ -965,12 +969,15 @@ public function cambiarBloqueoRol(Request $request)
         ], 500);
     }
 }
+
+// funcion pdf reporte para multiples categorias, con bloqueo desde admin
 public function obtenerPdfReporteMensual(Request $request)
 {
     $request->validate([
         'servicio_id'  => 'required',
         'mes_id'       => 'required',
-        'categoria_id' => 'required' 
+        'categoria_id' => 'nullable'
+
     ]);
 
     $user = $request->user();
@@ -980,7 +987,8 @@ public function obtenerPdfReporteMensual(Request $request)
 
     $servicioId  = $request->input('servicio_id');
     $mesId       = $request->input('mes_id');
-    $categoriaId = $request->input('categoria_id');
+    $categoriaIds = explode(',', $request->input('categoria_id'));
+
 
     // Consulta de bloqueo
     $estaBloqueado = DB::table('roles_estados')
@@ -1011,7 +1019,7 @@ public function obtenerPdfReporteMensual(Request $request)
         ->join('personas as p', 'p.user_id', '=', 'u.id')
         ->join('categorias as cat', 'u.categoria_id', '=', 'cat.id')
         ->where('us.servicio_id', $servicioId)
-        ->where('u.categoria_id', $categoriaId) 
+        ->whereIn('u.categoria_id', $categoriaIds)
         ->where('us.estado', 1)
         ->select(
             'u.id as usuario_id',
@@ -1072,9 +1080,13 @@ public function obtenerPdfReporteMensual(Request $request)
 
     // 5. Cabecera estructural
     $nombreServicio  = DB::table('servicios')->where('id', $servicioId)->value('nombre') ?? 'General';
-    $nombreCategoria = DB::table('categorias')->where('id', $categoriaId)->value('nombre') ?? 'N/A';
+    $nombresCategorias = DB::table('categorias') ->whereIn('id', $categoriaIds) ->pluck('nombre')->implode(', '); 
+    $nombreCategoria = $nombresCategorias ?: 'N/A';
     $nombreMes       = DB::table('meses')->where('id', $mesId)->value('nombre') ?? 'Mes Seleccionado';
     
+
+
+
     $semanaPrimera = $semanasMes->first();
     $semanaUltima  = $semanasMes->last();
     $periodoExacto = "Del {$semanaPrimera->fecha_inicio} al {$semanaUltima->fecha_fin}";

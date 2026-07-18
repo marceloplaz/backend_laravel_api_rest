@@ -251,7 +251,7 @@ public function reporteHorasSemana(Request $request, $semana_id, $usuario_id = n
             'id' => $user->id,
             'nombre' => $user->persona->nombre_completo ?? $user->name,
             'tipo_salario' => $user->persona->tipo_salario ?? 'No definido',
-            'total_horas' => round($totalHorasAcumuladas, 2), // 👈 ESTO ES LO QUE LEERÁ ANGULAR
+            'total_horas' => round($totalHorasAcumuladas, 2), 
             'conteo_turnos' => count($detalleTurnos),
             'detalle' => $detalleTurnos
         ];
