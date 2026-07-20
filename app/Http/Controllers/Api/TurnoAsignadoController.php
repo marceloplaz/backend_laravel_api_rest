@@ -201,45 +201,54 @@ public function verTurnosPorJerarquia(Request $request, $servicioId)
     }
 
 
-
 public function reporteSemanal(Request $request, $semana_id)
 {
+    \Log::info('Full Request:', $request->all());
+    \Log::info('Query Params:', $request->query());
+    
     $servicio_id = $request->query('servicio_id');
-    $categoria_id = $request->query('categoria_id');
-
+    $categoria_ids = $request->query('categoria_id', $request->query('categoria_id_array'));
+    
+    
     $semana = \App\Models\Semana::with('mes')->findOrFail($semana_id);
     $servicio = \App\Models\Servicio::findOrFail($servicio_id);
-    $categoria = \App\Models\Categoria::findOrFail($categoria_id);
-
-    $usuarios = \App\Models\User::with([
-    'persona', 
-    'turnosAsignados' => function($q) use ($semana_id) {
-        // Traemos todos los turnos de la semana, sin filtrar por servicio aquí
-        $q->where('semana_id', $semana_id)
-          ->with(['turno', 'area', 'novedad', 'servicio']); 
+        
+    if (empty($categoria_ids)) {
+        $nombresCategorias = 'CTAEGORIASA';
+    } else {
+        // Obtenemos los nombres solo si se enviaron IDs
+        $nombresCategorias = \App\Models\Categoria::whereIn('id', (array)$categoria_ids)
+                                ->pluck('nombre')
+                                ->implode(', ');
     }
-])
-// El filtro de abajo asegura que solo salgan los usuarios que pertenecen a este servicio
-->whereHas('servicios', function($q) use ($servicio_id) {
-    $q->where('servicios.id', $servicio_id);
-})
-->where('categoria_id', $categoria_id)
-->get();
+
+   $usuarios = \App\Models\User::query()
+    ->whereHas('servicios', function($q) use ($servicio_id) {
+        $q->where('servicios.id', $servicio_id);
+    })
+    ->when($request->has('categoria_id'), function($q) use ($request) {
+        $categorias = $request->input('categoria_id');
+         return $q->whereIn('categoria_id', (array)$categorias);
+    })
+    ->get();
     $data = [
         'servicio'  => $servicio,
-        'categoria' => $categoria,
+        'nombre_categorias' => $nombresCategorias,
         'mes'       => $semana->mes->nombre,
         'periodo'   => "Semana {$semana->numero_semana} ({$semana->fecha_inicio} a {$semana->fecha_fin})",
         'fecha_inicio_limpia' => $semana->fecha_inicio,
         'usuarios'  => $usuarios 
     ];
 
-  $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.reporteSemanal', $data)
+    $pdf = \Barryvdh\DomPDF\Facade\Pdf::loadView('pdf.reporteSemanal', $data)
                   ->setPaper('a4', 'landscape');
     
-    // Devolvemos el stream, que es lo ideal para visualización y descarga
     return $pdf->stream("Reporte_Semanal_{$servicio->nombre}.pdf");
 }
+
+
+
+
 
     /**
      * 3. REPORTE MENSUAL
