@@ -3,48 +3,104 @@
 <head>
     <meta charset="UTF-8">
     <style>
-        @page { margin: 0.5cm; }
-        body { font-family: 'Helvetica', sans-serif; font-size: 10px; color: #333; margin: 0; }
+        @page { 
+            margin: 1cm 0.8cm; 
+        }
+        body { 
+            font-family: 'Helvetica', 'Arial', sans-serif; 
+            font-size: 9.5px; 
+            color: #2b2b2b; 
+            margin: 0; 
+            background-color: #ffffff;
+        }
         
-        .header { width: 100%; border-bottom: 3px solid #065022; padding-bottom: 10px; margin-bottom: 15px; }
-        .header h1 { color: #065022; font-size: 20px; font-weight: bold; margin: 0; text-align: center; letter-spacing: 0.5px; }
+        /* Título Principal Estilo Mensual */
+        .header-title {
+            text-align: center;
+            color: #065022;
+            font-size: 16px;
+            font-weight: bold;
+            text-transform: uppercase;
+            margin-bottom: 12px;
+            letter-spacing: 0.5px;
+        }
+
+        /* Tabla de Información General */
+        .info-table { 
+            width: 100%; 
+            margin-bottom: 15px; 
+            border-collapse: collapse;
+        }
+        .info-table td { 
+            font-size: 10.5px; 
+            padding: 3px 0; 
+            color: #2b2b2b; 
+        }
+
+        /* Tabla Principal de Asistencia */
+        .main-table { 
+            width: 100%; 
+            border-collapse: collapse; 
+            table-layout: fixed; 
+        }
+        .main-table th { 
+            background-color: #e1f5ee; 
+            border: 1px solid #bce2e2; 
+            padding: 7px 3px; 
+            color: #065022; 
+            font-size: 9px; 
+            font-weight: bold; 
+            text-align: center;
+        }
+        .main-table td { 
+            border: 1px solid #d0e8df; 
+            padding: 5px 3px; 
+            vertical-align: middle; 
+        }
+
+        /* Anchos de Columnas Optimizados */
+        .col-personal { width: 24%; text-align: left; padding-left: 6px !important; }
+        .col-dia-semana { width: 9.5%; text-align: center; } 
+        .col-totales { width: 4.5%; text-align: center; font-weight: bold; font-size: 11px; }
         
-        .info-table { width: 100%; margin-bottom: 12px; }
-        .info-table td { font-size: 11px; padding: 2px; color: #2b2b2b; }
+        /* Estilos del Personal */
+        .nombre-p { font-weight: bold; color: #111111; text-transform: uppercase; font-size: 9.5px; display: block; line-height: 1.1; }
+        .cargo-p { color: #065022; font-size: 8.5px; display: block; margin-top: 1px; font-weight: bold; }
+        .salario-p { color: #c0392b; font-size: 8px; font-weight: bold; display: block; margin-top: 1px; }
 
-        .main-table { width: 100%; border-collapse: collapse; table-layout: fixed; }
-        .main-table th { background-color: #f4f9f5; border: 1px solid #bce2e2; padding: 8px 2px; color: #065022; font-size: 9.5px; font-weight: bold; }
-        .main-table td { border: 1px solid #dee2e6; padding: 4px 2px; vertical-align: middle; height: 42px; }
-
-        .col-personal { width: 32.5%; text-align: left; padding-left: 8.5px !important; }
-        .col-dia-semana { width: 8.5%; text-align: center; } 
-        .col-totales { width: 4%; text-align: center; font-weight: bold; font-size: 12px; }
+        /* Tarjetas de Turnos Limpias y Elegantes (Estilo Mensual) */
+        .turno-box { 
+            background-color: #f4fbf8; 
+            border: 1px solid #a3d9c9; 
+            border-radius: 3px; 
+            padding: 3px 2px; 
+            text-align: center; 
+            margin-bottom: 2px;
+        }
+        .turno-area { color: #555; font-size: 7.5px; font-weight: bold; display: block; margin-bottom: 1px; text-transform: uppercase; }
+        .turno-nombre { color: #065022; font-weight: bold; font-size: 9.5px; display: block; text-transform: uppercase; margin-bottom: 1px; }
+        .turno-horas { color: #333; font-size: 8px; font-weight: normal; }
         
-        .nombre-p { font-weight: 800; color: #111111; text-transform: uppercase; font-size: 14px; display: block; line-height: 1.1; white-space: nowrap; }
-        .cargo-p { color: #055112; font-size: 10px; display: block; margin-top: 2px; font-weight: 600; }
-        .salario-p { color: #065022; font-size: 10px; font-weight: bold; text-transform: uppercase; display: block; margin-top: 1px; }
+        .vacio { color: #bbb; text-align: center; font-size: 10px; }
+        .horas-txt { color: #065022; }
 
-        .horas-txt { color: #09935c; }
-
-        .turno-box { background-color: rgba(9, 134, 26, 0.08) !important; border: 1px solid rgba(7, 80, 34, 0.25); border-radius: 4px; padding: 4px 2px; text-align: center; }
-        .turno-area { color: #140101; font-size: 8.5px; font-weight: bold; display: block; margin-bottom: 2px; }
-        .turno-nombre { color: #065022; font-weight: 800; font-size: 12px; display: block; text-transform: uppercase; margin-bottom: 2px; line-height: 1.1; }
-        .turno-horas { color: #222; font-size: 8.5px; font-weight: 700; }
-        .vacio { color: #adb5bd; text-align: center; font-size: 11px; font-weight: bold; }
+        /* Divisor elegante cuando hay turnos cruzados o múltiples */
+        .turno-divider {
+            border-top: 1px dashed #a3d9c9;
+            margin: 3px 0;
+        }
     </style>
 </head>
 <body>
 
-<div class="header">
-    <h1>REPORTE SEMANAL DE ASISTENCIA</h1>
-</div>
+<!-- Cabecera idéntica al reporte mensual -->
+<div class="header-title">REPORTE SEMANAL DE ASISTENCIA</div>
 
 <table class="info-table">
     <tr>
-        <td width="35%"><strong>SERVICIO:</strong> {{ $servicio->nombre }}</td>
-        {{-- Corrección de seguridad para la categoría --}}
+        <td width="40%"><strong>SERVICIO:</strong> {{ $servicio->nombre }}</td>
         <td width="35%"><strong>CATEGORÍA:</strong> {{ $nombre_categorias }}</td>
-        <td width="30%" align="right"><strong>MES:</strong> {{ $mes }}</td>
+        <td width="25%" align="right"><strong>MES:</strong> {{ $mes }}</td>
     </tr>
     <tr>
         <td colspan="3"><strong>PERIODO:</strong> {{ $periodo }}</td>
@@ -75,11 +131,10 @@
         @endphp
     <tr>
         <td class="col-personal">
-    <span class="nombre-p">{{ $u->persona->nombre_completo ?? $u->name }}</span>
-    <!-- Aquí leemos la categoría directamente del modelo usuario -->
-    <span class="cargo-p">{{ $u->categoria->nombre ?? 'Sin Categoría' }}</span>
-    <span class="salario-p">[{{ $u->persona->tipo_salario ?? 'No Definido' }}]</span>
-</td>
+            <span class="nombre-p">{{ $u->persona->nombre_completo ?? $u->name }}</span>
+            <span class="cargo-p">{{ $u->categoria->nombre ?? 'Sin Categoría' }}</span>
+            <span class="salario-p">[{{ $u->persona->tipo_salario ?? 'No Definido' }}]</span>
+        </td>
 
         @for($i = 0; $i < 7; $i++)
             @php
@@ -101,8 +156,11 @@
 
             <td align="center" class="col-dia-semana">
                 @if($asignacionesDelDia->isNotEmpty())
-                    @foreach($asignacionesDelDia as $asignacion)
-                        <div class="turno-box" style="margin-bottom: 2px;">
+                    @foreach($asignacionesDelDia as $index => $asignacion)
+                        @if($index > 0)
+                            <div class="turno-divider"></div>
+                        @endif
+                        <div class="turno-box">
                             <span class="turno-area">
                                 {{ $asignacion->area->nombre ?? ($asignacion->servicio->nombre ?? 'GENERAL') }}
                             </span>
@@ -114,7 +172,7 @@
                                 {{ \Carbon\Carbon::parse($asignacion->turno->hora_fin)->format('H:i') }}
                             </span>
                             @if($asignacion->servicio_id != $servicio->id)
-                                <div style="color: #e74c3c; font-size: 6px; font-weight: bold; margin-top: 2px; border-top: 0.5px solid rgba(0,0,0,0.1); padding-top: 1px; text-transform: uppercase;">
+                                <div style="color: #e74c3c; font-size: 6.5px; font-weight: bold; margin-top: 1px; border-top: 0.5px solid rgba(0,0,0,0.1); padding-top: 1px; text-transform: uppercase;">
                                     {{ $asignacion->servicio->nombre ?? 'EXTERNO' }}
                                 </div>
                             @endif
@@ -130,7 +188,7 @@
         <td class="col-totales horas-txt">{{ $totalHorasSemanales }}h</td>
     </tr>
     @endforeach
-</tbody>
+    </tbody>
 </table>
 
 </body>
