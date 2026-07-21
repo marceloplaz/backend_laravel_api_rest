@@ -171,11 +171,6 @@
                                 {{ \Carbon\Carbon::parse($asignacion->turno->hora_inicio)->format('H:i') }} - 
                                 {{ \Carbon\Carbon::parse($asignacion->turno->hora_fin)->format('H:i') }}
                             </span>
-                            @if($asignacion->servicio_id != $servicio->id)
-                                <div style="color: #e74c3c; font-size: 6.5px; font-weight: bold; margin-top: 1px; border-top: 0.5px solid rgba(0,0,0,0.1); padding-top: 1px; text-transform: uppercase;">
-                                    {{ $asignacion->servicio->nombre ?? 'EXTERNO' }}
-                                </div>
-                            @endif
                         </div>
                     @endforeach
                 @else

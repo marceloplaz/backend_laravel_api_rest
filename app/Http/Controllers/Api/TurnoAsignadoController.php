@@ -337,10 +337,11 @@ public function getEquipoFiltrado(Request $request)
                 $query->where('categoria_id', $categoria_id);
             }
 
-            $equipo = $query->with(['persona', 'categoria', 'turnosAsignados' => function($q) use ($semana_id) {
-                $q->where('semana_id', $semana_id)
-                  ->with(['turno', 'area', 'novedad.solicitante.persona', 'novedad.reemplazo.persona']); 
-            }])->get();
+            $equipo = $query->with(['persona', 'categoria', 'turnosAsignados' => function($q) use ($semana_id, $servicio_id) {
+    $q->where('semana_id', $semana_id)
+      ->where('servicio_id', $servicio_id) // <--- FILTRAR ESTRICTAMENTE POR EL SERVICIO ACTUAL
+      ->with(['turno', 'area', 'novedad.solicitante.persona', 'novedad.reemplazo.persona']); 
+}])->get();
 
             // 2. Procesar cada usuario para incluir turnos donde es titular y donde es reemplazo
             // ... después de obtener la variable $equipo ...
