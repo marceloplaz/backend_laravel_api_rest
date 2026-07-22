@@ -315,7 +315,6 @@ public function reporteSemanal(Request $request, $semana_id)
 
 
 
-
 public function getEquipoFiltrado(Request $request)
 {
     try {
@@ -346,37 +345,38 @@ public function getEquipoFiltrado(Request $request)
             $query->where('categoria_id', $categoria_id);
         }
 
-        $equipo = $query->with(['persona', 'categoria', 'turnosAsignados' => function($q) use ($semana_id, $servicio_id) {
-            // FILTRO CLAVE: Traer únicamente los turnos de la semana Y del servicio actual
+        // Traemos los turnos de TODOS los servicios de la semana
+        $equipo = $query->with(['persona', 'categoria', 'turnosAsignados' => function($q) use ($semana_id) {
             $q->where('semana_id', $semana_id)
-              ->where('servicio_id', $servicio_id)
-              ->with(['turno', 'area', 'novedad.solicitante.persona', 'novedad.reemplazo.persona']); 
+              ->with(['turno', 'area', 'servicio', 'novedad.solicitante.persona', 'novedad.reemplazo.persona']); 
         }])->get();
 
-        // 2. Procesar cada usuario para incluir turnos donde es titular y donde es reemplazo
+        // 2. Procesar cada usuario
         $resultado = $equipo->map(function($user) use ($semana_id, $servicio_id) {
             
-            $user->loadMissing(['turnosAsignados.novedad.solicitante.persona', 'turnosAsignados.novedad.reemplazo.persona']);
+            $user->loadMissing(['turnosAsignados.novedad.solicitante.persona', 'turnosAsignados.novedad.reemplazo.persona', 'turnosAsignados.servicio']);
 
-            // A. Turnos directos filtrados por el servicio actual
+            // A. Turnos directos (ahora cargan de todos los servicios de la semana)
             $turnosDirectos = $user->turnosAsignados->map(function($ta) {
                 return $this->formatearTurno($ta, $ta->novedad);
             });
 
-            // B. Turnos como reemplazo dentro del servicio actual
+            // B. Turnos como reemplazo (QUITAMOS el filtro estricto de servicio_id aquí también)
             $novedadesComoReemplazo = NovedadLaboral::where('usuario_reemplazo_id', $user->id)
-                ->whereHas('asignacion', function($q) use ($semana_id, $servicio_id) {
-                    $q->where('semana_id', $semana_id)
-                      ->where('servicio_id', $servicio_id);
+                ->whereHas('asignacion', function($q) use ($semana_id) {
+                    $q->where('semana_id', $semana_id);
                 })
-                ->with(['asignacion.turno', 'asignacion.area', 'solicitante.persona', 'reemplazo.persona'])
+                ->with(['asignacion.turno', 'asignacion.area', 'asignacion.servicio', 'solicitante.persona', 'reemplazo.persona'])
                 ->get();
 
             $turnosVirtuales = $novedadesComoReemplazo->map(function($nov) {
                 $asignacion = $nov->asignacion;
+                if (!$asignacion) {
+                    return null;
+                }
                 $asignacion->setRelation('novedad', $nov);
                 return $this->formatearTurno($asignacion, $nov);
-            });
+            })->filter();
 
             $todosLosTurnos = $turnosDirectos->concat($turnosVirtuales)
                 ->unique('id_asignacion')
@@ -405,11 +405,10 @@ public function getEquipoFiltrado(Request $request)
     }
 }
 
-    /**
-     * Helper para unificar el formato del JSON
-     */
+/**
+ * Helper unificado con los datos del servicio para el frontend
+ */
 private function formatearTurno($ta, $novedad) {
-    // Extraemos los nombres de la columna 'nombre_completo'
     $nombreSolicitante = $novedad?->solicitante?->persona?->nombre_completo ?? 'N/A';
     $nombreReemplazo   = $novedad?->reemplazo?->persona?->nombre_completo ?? 'N/A';
 
@@ -417,19 +416,17 @@ private function formatearTurno($ta, $novedad) {
     $horaFinFormateada    = $ta->turno ? Carbon::parse($ta->turno->hora_fin)->format('H:i') : '00:00';
 
     return [
-        'id_asignacion'  => $ta->id,
-        'nombre_turno'   => $ta->turno?->nombre_turno ?? 'Sin Turno',
-        'hora_inicio'    => $horaInicioFormateada, 
-        'hora_fin'       => $horaFinFormateada,
-        'horario'        => $ta->turno ? "{$ta->turno->hora_inicio} - {$ta->turno->hora_fin}" : 'N/A',
-        
-        // 🌟 ¡AQUÍ MISMO EN LA RAÍZ! Directo y sin vueltas
-        'duracion_horas' => $ta->turno ? (float)$ta->turno->duracion_horas : 0,
-        
-        'fecha'          => $ta->fecha,
-        'color'          => $novedad ? '#fd7e14' : ($ta->turno->color ?? '#52600c'),
-        'area_nombre'    => $ta->area ? $ta->area->nombre : ($ta->servicio ? $ta->servicio->nombre : 'GENERAL'),
-
+        'id_asignacion'   => $ta->id,
+        'servicio_id'     => $ta->servicio_id, // <--- OBLIGATORIO para que el HTML sepa diferenciar si es de otro servicio
+        'servicio_nombre' => $ta->servicio?->nombre ?? 'Sin Servicio', // <--- Nombre para la etiqueta visual
+        'nombre_turno'    => $ta->turno?->nombre_turno ?? 'Sin Turno',
+        'hora_inicio'     => $horaInicioFormateada, 
+        'hora_fin'        => $horaFinFormateada,
+        'horario'         => $ta->turno ? "{$ta->turno->hora_inicio} - {$ta->turno->hora_fin}" : 'N/A',
+        'duracion_horas'  => $ta->turno ? (float)$ta->turno->duracion_horas : 0,
+        'fecha'           => $ta->fecha,
+        'color'           => $novedad ? '#fd7e14' : ($ta->turno->color ?? '#52600c'),
+        'area_nombre'     => $ta->area ? $ta->area->nombre : ($ta->servicio ? $ta->servicio->nombre : 'GENERAL'),
         'novedad' => $novedad ? [
             'usuario_solicitante_id' => $novedad->usuario_solicitante_id,
             'usuario_reemplazo_id'   => $novedad->usuario_reemplazo_id,
