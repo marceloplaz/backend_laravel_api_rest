@@ -83,7 +83,7 @@ public function index(Request $request)
         'hora_inicio'    => 'required',
         'hora_fin'       => 'required',
         'duracion_horas' => 'required|integer',
-        'categoria_id'   => 'required|integer' // Cambiado a required
+        'categoria_id'   => 'required|integer' 
     ]);
 
     try {
