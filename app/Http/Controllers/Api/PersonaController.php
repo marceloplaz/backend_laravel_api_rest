@@ -236,16 +236,14 @@ public function getFormDependencies()
     return response()->json(['error' => $e->getMessage()], 500);
 }
     }
-
 public function generarMatrizTurnos(Request $request)
 {
     $mes = $request->input('mes_id', date('m'));
-    $gestion = $request->input('gestion', date('Y'));
-    
+    $gestion = $request->input('gestion', date('Y'));  
     $tipoSalario = $request->input('tipo_salario');
     $categoriaId = $request->input('categoria_id');
     $categoriaNombre = $request->input('categoria_nombre');
-
+    
     $fechaInicio = Carbon::createFromDate($gestion, $mes, 1)->startOfMonth()->toDateString();
     $fechaFin = Carbon::createFromDate($gestion, $mes, 1)->endOfMonth()->toDateString();
 
@@ -253,12 +251,13 @@ public function generarMatrizTurnos(Request $request)
         'categoria', 
         'persona', 
         'turnos' => function($q) use ($fechaInicio, $fechaFin) {
-            $q->whereBetween('fecha', [$fechaInicio, $fechaFin]);
+            // SOLO filtramos por fecha en el pivote. No uses ->with('servicio') aquí.
+            $q->wherePivotBetween('fecha', [$fechaInicio, $fechaFin]);
         }
     ]);
+
     $nombreFiltroPartes = [];
 
-    // 1. Filtrar por Tipo de Salario si está activo (TGN, SUS, Contrato)
     if ($tipoSalario && strtolower($tipoSalario) !== 'todos') {
         $nombreFiltroPartes[] = strtoupper($tipoSalario);
         $query->whereHas('persona', function($q) use ($tipoSalario) {
@@ -276,9 +275,23 @@ public function generarMatrizTurnos(Request $request)
             $q->where('nombre', 'LIKE', '%' . $categoriaNombre . '%');
         });
     }
+    
     $nombreFiltro = count($nombreFiltroPartes) > 0 ? implode(' - ', $nombreFiltroPartes) : 'TODAS LAS CATEGORÍAS';
 
     $personal = $query->get();
+
+    
+    $personal->each(function($user) {
+        $user->turnos->each(function($turno) {
+            if ($turno->pivot && $turno->pivot->servicio_id) {
+                $servicio = \App\Models\Servicio::find($turno->pivot->servicio_id);
+                $turno->pivot->nombre_servicio = $servicio ? $servicio->nombre : '';
+            } else {
+                $turno->pivot->nombre_servicio = '';
+            }
+        });
+    });
+
     return response()->json([
         'data' => $personal,
         'fecha_inicio' => $fechaInicio,

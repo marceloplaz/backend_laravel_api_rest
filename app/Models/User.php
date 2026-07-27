@@ -92,12 +92,13 @@ public function hasAnyRole(array $roles): bool
     return $this->hasMany(Vacacion::class, 'usuario_id');
 }
     //  Relación con Turnos
-    public function turnos()
-    {
-       return $this->belongsToMany(Turno::class, 'turnos_asignados', 'usuario_id', 'turno_id')
-                ->withPivot('fecha', 'estado')
+   public function turnos()
+{
+    return $this->belongsToMany(Turno::class, 'turnos_asignados', 'usuario_id', 'turno_id', 'id')
+                ->withPivot('fecha', 'estado', 'servicio_id')
                 ->withTimestamps();
-    }
+}
+
     public function turnosAsignados() {
     return $this->hasMany(TurnoAsignado::class, 'usuario_id');
 }
