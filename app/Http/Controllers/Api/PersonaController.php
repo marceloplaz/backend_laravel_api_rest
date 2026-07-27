@@ -10,7 +10,9 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\DB;
 use Barryvdh\DomPDF\Facade\Pdf;
 use Maatwebsite\Excel\Facades\Excel; 
-use App\Imports\PersonalImport;      
+use App\Imports\PersonalImport;
+use Carbon\Carbon;      
+use App\Models\Categoria;
 
 class PersonaController extends Controller 
 {
@@ -25,14 +27,12 @@ public function ejecutarSincronizacion(SincronizacionService $service) {
     } catch (\Exception $e) {
         
         \Log::error("Error en sincronización: " . $e->getMessage());
-        
-        return response()->json([
+            return response()->json([
             'status' => 'error',
             'message' => 'Hubo un error al sincronizar. Por favor, revise los logs.'
         ], 500);
     }
 }
-
 
     public function index(Request $request)
     {
@@ -121,7 +121,7 @@ public function getFormDependencies()
 {
     return response()->json([
         'categorias' => \App\Models\Categoria::all(['id', 'nombre']),
-        'roles' => \App\Models\Role::all(['id', 'name']), // O el modelo que uses para roles
+        'roles' => \App\Models\Role::all(['id', 'name']), 
         'tipos_salario' => [
             ['id' => 'TGN', 'nombre' => 'TGN'],
             ['id' => 'SUS', 'nombre' => 'SUS'],
@@ -146,8 +146,6 @@ public function getFormDependencies()
     if (!$persona) {
         return response()->json(['message' => 'No encontrado'], 404);
     }
-
-    // Retornamos el objeto para que Angular lo reciba en 'res.data'
     return response()->json([
         'status' => 'success',
         'data' => $persona
@@ -196,6 +194,7 @@ public function getFormDependencies()
     }
 
 
+
          public function exportarPdf(Request $request)
     {
     // 1. Obtenemos el ID de la categoría del request (si existe)
@@ -238,4 +237,53 @@ public function getFormDependencies()
 }
     }
 
+public function generarMatrizTurnos(Request $request)
+{
+    $mes = $request->input('mes_id', date('m'));
+    $gestion = $request->input('gestion', date('Y'));
+    
+    $tipoSalario = $request->input('tipo_salario');
+    $categoriaId = $request->input('categoria_id');
+    $categoriaNombre = $request->input('categoria_nombre');
+
+    $fechaInicio = Carbon::createFromDate($gestion, $mes, 1)->startOfMonth()->toDateString();
+    $fechaFin = Carbon::createFromDate($gestion, $mes, 1)->endOfMonth()->toDateString();
+
+    $query = User::with([
+        'categoria', 
+        'persona', 
+        'turnos' => function($q) use ($fechaInicio, $fechaFin) {
+            $q->whereBetween('fecha', [$fechaInicio, $fechaFin]);
+        }
+    ]);
+    $nombreFiltroPartes = [];
+
+    // 1. Filtrar por Tipo de Salario si está activo (TGN, SUS, Contrato)
+    if ($tipoSalario && strtolower($tipoSalario) !== 'todos') {
+        $nombreFiltroPartes[] = strtoupper($tipoSalario);
+        $query->whereHas('persona', function($q) use ($tipoSalario) {
+            $q->where('tipo_salario', $tipoSalario);
+        });
+    }
+
+    if ($categoriaId) {
+        $query->where('categoria_id', $categoriaId);
+        $cat = Categoria::find($categoriaId);
+        if ($cat) { $nombreFiltroPartes[] = strtoupper($cat->nombre); }
+    } elseif ($categoriaNombre && strtolower($categoriaNombre) !== 'todos' && strtolower($categoriaNombre) !== 'todas') {
+        $nombreFiltroPartes[] = strtoupper($categoriaNombre);
+        $query->whereHas('categoria', function($q) use ($categoriaNombre) {
+            $q->where('nombre', 'LIKE', '%' . $categoriaNombre . '%');
+        });
+    }
+    $nombreFiltro = count($nombreFiltroPartes) > 0 ? implode(' - ', $nombreFiltroPartes) : 'TODAS LAS CATEGORÍAS';
+
+    $personal = $query->get();
+    return response()->json([
+        'data' => $personal,
+        'fecha_inicio' => $fechaInicio,
+        'fecha_fin' => $fechaFin,
+        'nombre_categoria' => $nombreFiltro
+    ]);
+}
 }

@@ -25,7 +25,10 @@ Route::prefix("v1")->group(function () {
     Route::post("/auth/login", [AuthController::class, "funLogin"])->middleware('throttle:5,1');
     Route::post("/auth/register", [AuthController::class, "funRegister"]);
     Route::get('buscar-profesionales', [UserController::class, 'index']); 
+    
+    Route::get('/usuarios/reporte-turnos', [PersonaController::class, 'generarMatrizTurnos']);
      Route::get('personal/exportar-pdf', [PersonaController::class, 'exportarPdf']);
+    
      Route::post('/personal/importar', [PersonaController::class, 'import']);
       Route::get('reporte-mensual', [TurnoController::class, 'reporteMensual']);
      Route::post('/actualizar-estado', [ServicioController::class, 'actualizarEstadoVinculacion']);
@@ -61,17 +64,11 @@ Route::prefix("v1")->group(function () {
     
     
     Route::middleware('auth:sanctum')->group(function () {
-
-    // Definición de grupos de acceso (Sincronizado con Angular)
-        // En api.php
-        // En routes/api.php
-$ROLES_ADMIN_FULL = 'super_admin,admin,admin_jefe_medico,admin_jefa_enfermeras,admin_jefa_servicios_generales,jefa_enfermeras';
-$ROLES_JEFATURAS  = $ROLES_ADMIN_FULL . ',jefe_medico_servicio,jefa_enfermeras_servicio,jefe_servicio';
-
-$ROLES_TURNOS     = $ROLES_JEFATURAS  . ',jefa_enfermeras_servicio'; 
-
-// CORRECCIÓN: Se cambió 'tecnico' por 'responsable_tecnico' para coincidir con Angular
-$ROLES_TECNICO    = $ROLES_JEFATURAS  . ',responsable_tecnico';
+       
+    $ROLES_ADMIN_FULL = 'super_admin,admin,admin_jefe_medico,admin_jefa_enfermeras,admin_jefa_servicios_generales,jefa_enfermeras';
+    $ROLES_JEFATURAS  = $ROLES_ADMIN_FULL . ',jefe_medico_servicio,jefa_enfermeras_servicio,jefe_servicio';
+    $ROLES_TURNOS     = $ROLES_JEFATURAS  . ',jefa_enfermeras_servicio'; 
+    $ROLES_TECNICO    = $ROLES_JEFATURAS  . ',responsable_tecnico';
 
 
 Route::prefix('areas')->middleware('role:super_admin|admin')->group(function () {
