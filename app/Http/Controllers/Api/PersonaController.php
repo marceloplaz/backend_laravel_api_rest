@@ -244,8 +244,10 @@ public function generarMatrizTurnos(Request $request)
     $categoriaId = $request->input('categoria_id');
     $categoriaNombre = $request->input('categoria_nombre');
     
-    $fechaInicio = Carbon::createFromDate($gestion, $mes, 1)->startOfMonth()->toDateString();
-    $fechaFin = Carbon::createFromDate($gestion, $mes, 1)->endOfMonth()->toDateString();
+    //$fechaInicio = Carbon::createFromDate($gestion, $mes, 1)->startOfMonth()->toDateString();
+    //$fechaFin = Carbon::createFromDate($gestion, $mes, 1)->endOfMonth()->toDateString();
+    $fechaInicio = $request->input('fecha_inicio') ?: Carbon::createFromDate($gestion, $mes, 1)->startOfMonth()->toDateString();
+    $fechaFin = $request->input('fecha_fin') ?: Carbon::createFromDate($gestion, $mes, 1)->endOfMonth()->toDateString();
 
     $query = User::with([
         'categoria', 
