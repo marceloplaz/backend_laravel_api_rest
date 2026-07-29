@@ -24,10 +24,8 @@ public function getFiltrosPorJerarquia(Request $request)
     if (!$rol) {
         return response()->json(['error' => 'Usuario sin rol asignado'], 403);
     }
-
-    // --- 1. FILTRADO DE CATEGORÍAS (Por Niveles) ---
+  
     $queryCat = Categoria::query();
-
     $categorias = match (true) {
         // Agregamos el ID 11 (admin_jefa_enfermeras) aquí para que vea todos los niveles si es necesario, 
         // o mantenemos su restricción de nivel 2 y 3 si solo debe gestionar enfermería y manuales.

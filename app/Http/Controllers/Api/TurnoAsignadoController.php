@@ -819,7 +819,7 @@ public function destroy($id)
     }
 }
 
-// Devuelve el total de horas y días trabajados por cada persona en un servicio y mes específico.
+//carga los turnos, mes servicio,  Devuelve el total de horas y días trabajados por cada persona en un servicio y mes específico.
  
 public function getResumenMensual(Request $request)
 {
