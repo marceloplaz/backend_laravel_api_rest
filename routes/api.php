@@ -18,6 +18,7 @@ use App\Http\Controllers\Api\VacacionController;
 use App\Http\Controllers\Api\NovedadLaboralController;
 use App\Http\Controllers\Api\KardexVacacionController;
 use App\Http\Controllers\Api\AreaController;
+use App\Http\Controllers\Api\SemanaController;
 
 Route::prefix("v1")->group(function () {
 
@@ -77,6 +78,10 @@ Route::prefix('areas')->middleware('role:super_admin|admin')->group(function () 
     Route::post('/guardar', [AreaController::class, 'store']);
     Route::delete('/{id}', [AreaController::class, 'destroy']);
 });
+
+
+
+
 
 Route::prefix('turnos-asignados')->group(function () {
             Route::put('/cambiar-bloqueo', [TurnoAsignadoController::class, 'cambiarBloqueoRol'])
@@ -221,6 +226,11 @@ Route::put('vacaciones/{id}/estado', [VacacionController::class, 'actualizarEsta
         Route::get('inicializar', [App\Http\Controllers\Api\RoleController::class, 'getDatosIniciales']);
         Route::get('buscar-empleado', [App\Http\Controllers\Api\UserController::class, 'buscarParaAsignacion']);
         Route::post('guardar-matriz', [App\Http\Controllers\Api\RoleController::class, 'guardarMatrizAccesos']);
+        Route::get('semanas-por-mes', [\App\Http\Controllers\Api\SemanaController::class, 'getSemanasPorMesYCategoria']);
+        Route::post('generar-semanas', [App\Http\Controllers\Api\SemanaController::class, 'generarSemanas']);
+        Route::get('meses', function() { return response()->json(\App\Models\Mes::all());});
+        Route::get('categorias', [CategoriaController::class, 'index']);
+    });
     });    
             
 
@@ -249,5 +259,4 @@ Route::put('vacaciones/{id}/estado', [VacacionController::class, 'actualizarEsta
             ];
         });
 
-    }); // Fin auth:sanctum
-});
+    }); 
