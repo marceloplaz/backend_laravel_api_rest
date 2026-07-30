@@ -19,6 +19,7 @@ use App\Http\Controllers\Api\NovedadLaboralController;
 use App\Http\Controllers\Api\KardexVacacionController;
 use App\Http\Controllers\Api\AreaController;
 use App\Http\Controllers\Api\SemanaController;
+use App\Http\Controllers\Api\GestionController;
 
 Route::prefix("v1")->group(function () {
 
@@ -53,11 +54,13 @@ Route::prefix("v1")->group(function () {
 
   });
 
-
-   Route::get('gestiones', function() {
+  
+     
+    Route::get('gestiones', function() {
         return response()->json(\App\Models\Gestion::all());
     });
     
+
     // Si quieres usar los controladores existentes:
     Route::get('servicios-lista', [ServicioController::class, 'index']); 
     Route::get('categorias-lista', [CategoriaController::class, 'index']);
@@ -221,21 +224,24 @@ Route::put('vacaciones/{id}/estado', [VacacionController::class, 'actualizarEsta
         // 🏗️ ADMINISTRACIÓN Y CONFIGURACIÓN (SOLO SUPER_ADMIN / ADMIN)
         // =========================================================
        
-        Route::middleware('jugadordeunbit:super_admin,admin')->group(function () {
-        Route::prefix('gestion-accesos')->group(function () {
+       Route::middleware('jugadordeunbit:super_admin,admin')->group(function () {
+    Route::prefix('gestion-accesos')->group(function () {
         Route::get('inicializar', [App\Http\Controllers\Api\RoleController::class, 'getDatosIniciales']);
         Route::get('buscar-empleado', [App\Http\Controllers\Api\UserController::class, 'buscarParaAsignacion']);
         Route::post('guardar-matriz', [App\Http\Controllers\Api\RoleController::class, 'guardarMatrizAccesos']);
+        
+        // --- RUTA DE GESTIONES CON EL NAMESPACE API ---
+        Route::get('gestiones', [GestionController::class, 'index']);
+        Route::put('semanas/{id}', [\App\Http\Controllers\Api\SemanaController::class, 'update']);
         Route::get('semanas-por-mes', [\App\Http\Controllers\Api\SemanaController::class, 'getSemanasPorMesYCategoria']);
         Route::post('generar-semanas', [App\Http\Controllers\Api\SemanaController::class, 'generarSemanas']);
-        Route::get('meses', function() { return response()->json(\App\Models\Mes::all());});
+        
+        Route::get('meses', function() { return response()->json(\App\Models\Mes::all()); });
         Route::get('categorias', [CategoriaController::class, 'index']);
     });
-    });    
-            
-
-            
-            // Configuración de turnos vinculados por servicio
+});
+                      
+         
             Route::prefix('servicios')->group(function () {
                  
                  Route::post('vincular-turnos', [ServicioTurnoController::class, 'vincularTurnos']);

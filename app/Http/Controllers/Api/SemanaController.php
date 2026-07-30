@@ -104,4 +104,20 @@ class SemanaController extends Controller
             'total_generadas' => $numeroSemana - 1
         ], 201);
     }
+
+    public function update(Request $request, $id)
+{
+    $semana = \App\Models\Semana::findOrFail($id);
+    
+    $semana->update([
+        'fecha_inicio' => $request->fecha_inicio,
+        'fecha_fin' => $request->fecha_fin,
+      
+    ]);
+
+    return response()->json([
+        'message' => 'Semana actualizada exitosamente',
+        'semana' => $semana
+    ]);
+}
 }
