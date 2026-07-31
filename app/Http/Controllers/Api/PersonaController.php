@@ -43,12 +43,10 @@ public function ejecutarSincronizacion(SincronizacionService $service) {
             $query->where('nombre_completo', 'like', "%$buscar%")
                   ->orWhere('carnet_identidad', 'like', "%$buscar%");
         }
-    
-        if ($request->has('cargo')) {
+            if ($request->has('cargo')) {
             $query->where('tipo_trabajador', $request->get('cargo'));
         }
-        
-        // paginador de 5 
+               
         $perPage = $request->get('per_page', 5);
 
 
@@ -155,15 +153,11 @@ public function getFormDependencies()
     public function update(Request $request, $id)
     {
         $persona = Persona::find($id);
-
         if (!$persona) {
             return response()->json(["message" => "Persona no encontrada"], 404);
         }
-
-        // Si el request trae datos anidados de persona, los extraemos
         $datos = $request->has('persona') ? $request->get('persona') : $request->all();
         $persona->update($datos);
-
         return response()->json([
             "message" => "Datos actualizados correctamente",
             "persona" => new PersonaResource($persona->fresh())

@@ -145,12 +145,12 @@ Route::put('vacaciones/{id}/estado', [VacacionController::class, 'actualizarEsta
             // Cambia /persona/ por /personal/
 
             Route::get('persona-catalogos', [PersonaController::class, 'getFormDependencies']);  
-              
-          
+                       
               Route::get('/reporte/{mes_id}', [TurnoAsignadoController::class, 'reporteMensual'])
             ->middleware('jugadordeunbit:ver_reportes');
 
-           Route::apiResource('usuarios', UserController::class);            
+            Route::apiResource('usuarios', UserController::class); 
+                       
             Route::apiResource('turnos', TurnoController::class);
             Route::get('servicios/{id}', [ServicioController::class, 'show']);
             Route::apiResource('servicios', ServicioController::class); 
