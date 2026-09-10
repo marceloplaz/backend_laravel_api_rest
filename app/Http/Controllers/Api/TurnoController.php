@@ -186,15 +186,16 @@ public function misTurnosMes(Request $request)
             'fecha'         => $t->fecha,
             'area_nombre'   => $t->area?->nombre ?? ($t->servicio?->nombre ?? 'Servicio General'),
             'color'         => $t->turno?->color ?? '#28a745',
-            
-            // 🌟 LA SOLUCIÓN DIRECTA: Duración inyectada en la raíz del objeto plano
+                
             'duracion_horas' => $t->turno ? (float)$t->turno->duracion_horas : 0,
+            'turno'         => $t->turno
+
         ];
     });
 
     return response()->json([
         'status' => 'success', 
-        'data'   => $dataFormateada
+        'data'   => $turnos
     ]);
 }
 public function reporteHorasSemana(Request $request, $semana_id, $usuario_id = null)

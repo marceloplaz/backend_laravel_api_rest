@@ -1,6 +1,7 @@
 <?php
 
 namespace App\Http\Controllers\Api;
+
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -8,86 +9,104 @@ use Carbon\Carbon;
 
 class AsistenciaController extends Controller
 {
-public function obtenerAsistenciaRango(Request $request)
+    public function obtenerAsistenciaRango(Request $request)
     {
-        // Validamos los parámetros de entrada
         $request->validate([
-            'usuario_id'   => 'required|integer',
+            'usuario_id'   => 'nullable|integer',
             'fecha_inicio' => 'required|date',
             'fecha_fin'    => 'required|date|after_or_equal:fecha_inicio',
         ]);
 
-        $usuarioId = $request->input('usuario_id');
+        $usuarioId   = $request->input('usuario_id');
         $fechaInicio = $request->input('fecha_inicio');
-        $fechaFin = $request->input('fecha_fin');
+        $fechaFin    = $request->input('fecha_fin');
 
-        // 1. Consultamos la vista en SQL Server
-        $registros = DB::connection('sqlsrv_rrhh')
+        $query = DB::connection('sqlsrv_rrhh')
             ->table('V_asistencia_permisos')
-            ->where('pperCodPer', $usuarioId)
-            ->whereBetween('FechaAsistencia', [$fechaInicio, $fechaFin])
-            ->orderBy('FechaAsistencia', 'ASC')
-            ->get();
+            ->whereBetween('FechaAsistencia', [$fechaInicio, $fechaFin]);
 
-        // 2. Reglas de asistencia (ej: Hora oficial de entrada 07:00 con 5 min de tolerancia)
-        $horaOficialEntrada = '07:00:00';
-        $minutosTolerancia = 5;
-        $ingresoPermitido = Carbon::parse($horaOficialEntrada)->addMinutes($minutosTolerancia);
+        $query->when(!empty($usuarioId), function ($q) use ($usuarioId) {
+            return $q->where('pperCodPer', $usuarioId);
+        });
 
-        // 3. Procesamiento y mapeo en el Backend
-        $resultado = $registros->map(function ($item) use ($ingresoPermitido) {
+        // Traemos todos los registros del rango para evaluar el turno correcto dinámicamente
+        $registros = $query->orderBy('FechaAsistencia', 'ASC')->get();
+        $resultado = $registros->map(function ($item) {
             $retrasoMinutos = 0;
-            $horaIngreso = $item->HoraIngreso;
-            $horaSalida = $item->HoraSalida;
+            $horaIngreso    = $item->HoraIngreso;
+            $horaSalida     = $item->HoraSalida;
 
-            // Control en Backend: Si la hora de entrada y salida son idénticas, significa que hubo un solo marcado
-            if ($horaIngreso === $horaSalida) {
-                $horaSalida = null; 
+            if ($horaIngreso && $horaIngreso === $horaSalida) {
+                $horaSalida = null;
             }
 
-            // Cálculo de retrasos si existe hora de ingreso
             if ($horaIngreso) {
-                $horaIngresoReal = Carbon::parse($horaIngreso);
+                $ingresoCarbon = Carbon::parse($horaIngreso);
+                
+                // 1. Identificar el turno correspondiente según el rango de marcación
+                $horaEntradaOficial = $this->obtenerTurnoOficial($ingresoCarbon);
 
-                if ($horaIngresoReal->greaterThan($ingresoPermitido)) {
-    // Redondeamos a 0 decimales (o cambia el 0 por 2 si prefieres decimales)
-    $retrasoMinutos = round($ingresoPermitido->diffInMinutes($horaIngresoReal, true), 0);
-}
+                // 2. Definir hora límite agregando los 5 minutos de tolerancia
+                $horaLimiteTolerancia = (clone $horaEntradaOficial)->addMinutes(5);
+
+                // 3. Evaluar si existe retraso
+                if ($ingresoCarbon->greaterThan($horaLimiteTolerancia)) {
+                    // Minutos transcurridos desde el inicio oficial del turno (o desde la tolerancia)
+                    $retrasoMinutos = (int) round($horaLimiteTolerancia->diffInMinutes($ingresoCarbon, true), 0);
+                }
             }
 
             return [
-                'codigo_personal'   => $item->pperCodPer,
-                'id_interno'        => $item->pperIdePer,
-                'ci'                => $item->CI,
-                'celular'           => $item->pperTelCel,
-                'nombre_completo'   => $item->NombreCompleto,
-                'fecha_asistencia'  => $item->FechaAsistencia,
-                'hora_ingreso'      => $horaIngreso,
-                'hora_salida'       => $horaSalida,
-                // Datos de permisos solicitados
-                'tipo_codigo'       => $item->TipoCodigo,
-                'nombre_permiso'    => $item->NombrePermiso,
-                'permiso_inicio'    => $item->PermisoFechaInicio,
-                'permiso_fin'       => $item->PermisoFechaFin,
-                'duracion'          => $item->Duracion,
-                'gestiones'         => $item->Gestiones,
-                // Cálculos de asistencia
-                'minutos_retraso'   => $retrasoMinutos,
-                'tiene_retraso'     => $retrasoMinutos > 5, // Ajustado a estricto mayor a 5 minutos
+                'codigo_personal'  => $item->pperCodPer,
+                'id_interno'       => $item->pperIdePer,
+                'ci'               => $item->CI,
+                'celular'          => $item->pperTelCel,
+                'nombre_completo'  => $item->NombreCompleto,
+                'fecha_asistencia' => $item->FechaAsistencia,
+                'hora_ingreso'     => $horaIngreso,
+                'hora_salida'      => $horaSalida,
+                'tipo_codigo'      => $item->TipoCodigo,
+                'nombre_permiso'   => $item->NombrePermiso,
+                'permiso_inicio'   => $item->PermisoFechaInicio,
+                'permiso_fin'      => $item->PermisoFechaFin,
+                'duracion'         => $item->Duracion,
+                'gestiones'        => $item->Gestiones,
+                'minutos_retraso'  => $retrasoMinutos,
+                'tiene_retraso'    => $retrasoMinutos > 0,
             ];
         })
-        // 🚀 4. FILTRADO INTELIGENTE: Solo dejamos pasar los que tienen retraso > 5 O tienen un permiso activo
+        // 4. Filtrar únicamente las incidencias reales
         ->filter(function ($item) {
-            $tieneRetrasoConsiderable = $item['minutos_retraso'] > 5;
-            $tienePermiso = !empty($item['nombre_permiso']) || !empty($item['tipo_codigo']);
-
-            return $tieneRetrasoConsiderable || $tienePermiso;
+            $tieneRetraso  = $item['minutos_retraso'] > 0;
+            $tienePermiso  = !empty($item['nombre_permiso']) || !empty($item['tipo_codigo']);
+            return $tieneRetraso || $tienePermiso;
         })
-        ->values(); // Resetea los índices de la colección para que viaje como un array limpio a Angular
+        ->values();
 
         return response()->json([
             'status' => 'success',
             'data'   => $resultado
         ]);
+    }
+
+    /**
+     * Determina la hora oficial del turno según el rango de marcación.
+     */
+    private function obtenerTurnoOficial(Carbon $horaIngreso): Carbon
+    {
+        $hora = $horaIngreso->hour;
+
+        // Turno Mañana (07:00) -> Marcaciones entre las 05:00 y las 10:59
+        if ($hora >= 5 && $hora < 11) {
+            return Carbon::parse($horaIngreso->format('Y-m-d') . ' 07:00:00');
+        }
+
+        // Turno Tarde (13:00) -> Marcaciones entre las 11:00 y las 16:59
+        if ($hora >= 11 && $hora < 17) {
+            return Carbon::parse($horaIngreso->format('Y-m-d') . ' 13:00:00');
+        }
+
+        // Turno Noche (19:00) -> Marcaciones desde las 17:00 en adelante o de madrugada
+        return Carbon::parse($horaIngreso->format('Y-m-d') . ' 19:00:00');
     }
 }

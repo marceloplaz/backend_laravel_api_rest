@@ -343,96 +343,100 @@ public function reporteSemanal(Request $request, $semana_id)
 
       return response()->json($coleccionFormateada);
 }
-
 public function getEquipoFiltrado(Request $request)
-{
-    try {
-        $servicio_id = $request->query('servicio_id');
-        $categoria_id = $request->query('categoria_id');
-        $semana_id = $request->query('semana_id');
-        $mes_id = $request->query('mes_id');
+    {
+        try {
+            $servicio_id  = $request->query('servicio_id');
+            $categoria_id = $request->query('categoria_id');
+            $semana_id    = $request->query('semana_id');
+            $mes_id       = $request->query('mes_id');
 
-        $estaBloqueado = DB::table('roles_estados')
-            ->where('servicio_id', $servicio_id)
-            ->where('mes_id', $mes_id)
-            ->where('bloqueado', 1)
-            ->exists();
+            // 1. Obtener objeto Semana para filtrar por RANGO DE FECHAS estricto
+            $semanaObj = Semana::find($semana_id);
+            if (!$semanaObj) {
+                return response()->json(['status' => 'error', 'message' => 'Semana no encontrada'], 404);
+            }
 
-        // 1. Obtener usuarios vinculados al servicio O que tengan turnos directos en este servicio/semana
-        $query = User::where(function($subQuery) use ($servicio_id, $semana_id) {
-            $subQuery->whereHas('servicios', function($q) use ($servicio_id) {
-                $q->where('servicios.id', $servicio_id)
-                  ->where('usuario_servicios.estado', 1);
-            })
-            ->orWhereHas('turnosAsignados', function($q) use ($servicio_id, $semana_id) {
-                $q->where('servicio_id', $servicio_id)
-                  ->where('semana_id', $semana_id);
-            });
-        });
+            $estaBloqueado = DB::table('roles_estados')
+                ->where('servicio_id', $servicio_id)
+                ->where('mes_id', $mes_id)
+                ->where('bloqueado', 1)
+                ->exists();
 
-        if ($categoria_id && is_numeric($categoria_id)) {
-            $query->where('categoria_id', $categoria_id);
-        }
-
-        // Traemos los turnos de TODOS los servicios de la semana
-        $equipo = $query->with(['persona', 'categoria', 'turnosAsignados' => function($q) use ($semana_id) {
-            $q->where('semana_id', $semana_id)
-              ->with(['turno', 'area', 'servicio', 'novedad.solicitante.persona', 'novedad.reemplazo.persona']); 
-        }])->get();
-
-        // 2. Procesar cada usuario
-        $resultado = $equipo->map(function($user) use ($semana_id, $servicio_id) {
-            
-            $user->loadMissing(['turnosAsignados.novedad.solicitante.persona', 'turnosAsignados.novedad.reemplazo.persona', 'turnosAsignados.servicio']);
-
-            // A. Turnos directos (ahora cargan de todos los servicios de la semana)
-            $turnosDirectos = $user->turnosAsignados->map(function($ta) {
-                return $this->formatearTurno($ta, $ta->novedad);
-            });
-
-            // B. Turnos como reemplazo (QUITAMOS el filtro estricto de servicio_id aquí también)
-            $novedadesComoReemplazo = NovedadLaboral::where('usuario_reemplazo_id', $user->id)
-                ->whereHas('asignacion', function($q) use ($semana_id) {
-                    $q->where('semana_id', $semana_id);
+            // 2. Usuarios del servicio o con turnos dentro del rango de fechas de la semana
+            $query = User::where(function($subQuery) use ($servicio_id, $semanaObj) {
+                $subQuery->whereHas('servicios', function($q) use ($servicio_id) {
+                    $q->where('servicios.id', $servicio_id)
+                      ->where('usuario_servicios.estado', 1);
                 })
-                ->with(['asignacion.turno', 'asignacion.area', 'asignacion.servicio', 'solicitante.persona', 'reemplazo.persona'])
-                ->get();
+                ->orWhereHas('turnosAsignados', function($q) use ($servicio_id, $semanaObj) {
+                    $q->where('servicio_id', $servicio_id)
+                      ->whereBetween('fecha', [$semanaObj->fecha_inicio, $semanaObj->fecha_fin]);
+                });
+            });
 
-            $turnosVirtuales = $novedadesComoReemplazo->map(function($nov) {
-                $asignacion = $nov->asignacion;
-                if (!$asignacion) {
-                    return null;
-                }
-                $asignacion->setRelation('novedad', $nov);
-                return $this->formatearTurno($asignacion, $nov);
-            })->filter();
+            if ($categoria_id && is_numeric($categoria_id)) {
+                $query->where('categoria_id', $categoria_id);
+            }
 
-            $todosLosTurnos = $turnosDirectos->concat($turnosVirtuales)
-                ->unique('id_asignacion')
-                ->values();
+            // Traemos los turnos utilizando la restricción por RANGO DE FECHAS de la semana
+            $equipo = $query->with(['persona', 'categoria', 'turnosAsignados' => function($q) use ($semanaObj) {
+                $q->whereBetween('fecha', [$semanaObj->fecha_inicio, $semanaObj->fecha_fin])
+                  ->with(['turno', 'area', 'servicio', 'novedad.solicitante.persona', 'novedad.reemplazo.persona']); 
+            }])->get();
 
-            return [
-                'usuario_id'       => $user->id,
-                'usuario_nombre'   => $user->persona ? $user->persona->nombre_completo : $user->name,
-                'categoria_nombre' => $user->categoria ? $user->categoria->nombre : 'Sin categoría',
-                'tipo_salario'     => $user->persona ? $user->persona->tipo_salario : 'No definido',
-                'turnos'           => $todosLosTurnos
-            ];
-        });
+            // 3. Procesar cada usuario
+            $resultado = $equipo->map(function($user) use ($semanaObj, $servicio_id) {
+                
+                $user->loadMissing(['turnosAsignados.novedad.solicitante.persona', 'turnosAsignados.novedad.reemplazo.persona', 'turnosAsignados.servicio']);
 
-        return response()->json([
-            'status' => 'success',
-            'equipo_visible' => $resultado,
-            'isBloqueado' => $estaBloqueado
-        ], 200, [], JSON_UNESCAPED_UNICODE);
+                $turnosDirectos = $user->turnosAsignados->map(function($ta) {
+                    return $this->formatearTurno($ta, $ta->novedad);
+                });
 
-    } catch (\Exception $e) {
-        return response()->json([
-            'status' => 'error',
-            'message' => $e->getMessage()
-        ], 500);
+                // Novedades de reemplazo por rango de fechas de la semana
+                $novedadesComoReemplazo = NovedadLaboral::where('usuario_reemplazo_id', $user->id)
+                    ->whereHas('asignacion', function($q) use ($semanaObj) {
+                        $q->whereBetween('fecha', [$semanaObj->fecha_inicio, $semanaObj->fecha_fin]);
+                    })
+                    ->with(['asignacion.turno', 'asignacion.area', 'asignacion.servicio', 'solicitante.persona', 'reemplazo.persona'])
+                    ->get();
+
+                $turnosVirtuales = $novedadesComoReemplazo->map(function($nov) {
+                    $asignacion = $nov->asignacion;
+                    if (!$asignacion) {
+                        return null;
+                    }
+                    $asignacion->setRelation('novedad', $nov);
+                    return $this->formatearTurno($asignacion, $nov);
+                })->filter();
+
+                $todosLosTurnos = $turnosDirectos->concat($turnosVirtuales)
+                    ->unique('id_asignacion')
+                    ->values();
+
+                return [
+                    'usuario_id'       => $user->id,
+                    'usuario_nombre'   => $user->persona ? $user->persona->nombre_completo : $user->name,
+                    'categoria_nombre' => $user->categoria ? $user->categoria->nombre : 'Sin categoría',
+                    'tipo_salario'     => $user->persona ? $user->persona->tipo_salario : 'No definido',
+                    'turnos'           => $todosLosTurnos
+                ];
+            });
+
+            return response()->json([
+                'status' => 'success',
+                'equipo_visible' => $resultado,
+                'isBloqueado' => $estaBloqueado
+            ], 200, [], JSON_UNESCAPED_UNICODE);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage()
+            ], 500);
+        }
     }
-}
 
 /**
  * Helper unificado con los datos del servicio para el frontend
