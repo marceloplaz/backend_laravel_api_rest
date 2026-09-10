@@ -21,8 +21,7 @@ class TurnoAsignadoController extends Controller
     /**
      * 1. REGISTRAR TURNO
      * Validamos que el usuario solo use turnos de SU categoría y en servicios permitidos.
-     */
-public function store(Request $request)
+     */public function store(Request $request)
 {
     $request->validate([
         'usuario_id'       => 'required|exists:users,id',
@@ -32,86 +31,121 @@ public function store(Request $request)
         'fecha'            => 'nullable|date',
         'fechas_multiples' => 'nullable|array',
         'observacion'      => 'nullable|string|max:500'
-
     ]);
 
     $asignacionServicio = \App\Models\UsuarioServicio::where('usuario_id', $request->usuario_id)
-        ->where('servicio_id', $request->servicio_id) // <--- Filtrar por el servicio de la pantalla
+        ->where('servicio_id', $request->servicio_id) 
         ->where('estado', true)
         ->first();
-    
 
     if (!$asignacionServicio) {
         return response()->json(['message' => 'El usuario no tiene un servicio activo.'], 422);
     }
 
-    // Limpiamos fechas (por si llega un array vacío)
     $fechasAProcesar = $request->fechas_multiples ?? ($request->fecha ? [$request->fecha] : []);
 
     if (empty($fechasAProcesar)) {
-        return response()->json(['message' => 'No se han seleccionado fechas para asignar.'], 400);
+        return response()->json(['message' => 'No se han seleccionado fechas.'], 400);
     }
 
+    sort($fechasAProcesar);
+    $turno = \App\Models\Turno::findOrFail($request->turno_id);
+
     try {
-        \DB::transaction(function () use ($request, $fechasAProcesar, $asignacionServicio) {
+        \DB::transaction(function () use ($request, $fechasAProcesar, $asignacionServicio, $turno) {
             foreach ($fechasAProcesar as $fecha) {
                 $fechaFormateada = Carbon::parse($fecha)->format('Y-m-d');
 
-               $semana = \App\Models\Semana::where('fecha_inicio', '<=', $fechaFormateada)
+                // Validar si la fecha elegida ya está bloqueada por un turno de 24h anterior
+                $existeBloqueo = TurnoAsignado::where('usuario_id', $request->usuario_id)
+                    ->where('fecha', $fechaFormateada)
+                    ->where('estado', 'bloqueado')
+                    ->exists();
+
+                if ($existeBloqueo) {
+                    throw new \Exception("La fecha {$fechaFormateada} está bloqueada por un post-turno de 24 horas.");
+                }
+
+                $semana = \App\Models\Semana::where('fecha_inicio', '<=', $fechaFormateada)
                     ->where('fecha_fin', '>=', $fechaFormateada)
-                    ->with('mes') // Cargamos el mes para evitar N+1
+                    ->with('mes')
                     ->first();
 
-                if (!$semana) continue;
+                $esMayorA24h = $turno->duracion_horas >= 24;
+                $etiqueta = $esMayorA24h ? 'Turno con réplica (24h)' : ($request->observacion ?? '');
 
-                // Usamos updateOrCreate para evitar duplicados en la misma fecha
-                TurnoAsignado::updateOrCreate(
-                    [
-                        'usuario_id' => $request->usuario_id,
-                        'fecha'      => $fechaFormateada,
-                        'turno_id'   => $request->turno_id,
-                        'servicio_id' => $request->servicio_id
-                    ],
-                    [
-                        'servicio_id' => $asignacionServicio->servicio_id,
-                        'area_id'     => $request->area_id,
-                        'turno_id'    => $request->turno_id,
-                        'semana_id'   => $semana->id,
-                        'mes_id'      => $semana->mes_id,
-                        'gestion_id'  => $semana->mes->gestion_id,
-                        'estado'      => 'programado',
-                        'observacion' => $request->observacion
-                    ]
+                if ($semana) {
+                    // 1. Guardar turno principal
+                    TurnoAsignado::updateOrCreate(
+                        [
+                            'usuario_id'  => $request->usuario_id,
+                            'fecha'       => $fechaFormateada,
+                            'servicio_id' => $request->servicio_id
+                        ],
+                        [
+                            'servicio_id'  => $asignacionServicio->servicio_id,
+                            'area_id'     => $request->area_id,
+                            'turno_id'    => $request->turno_id,
+                            'semana_id'   => $semana->id,
+                            'mes_id'      => $semana->mes_id,
+                            'gestion_id'  => $semana->mes->gestion_id,
+                            'estado'      => 'programado',
+                            'observacion' => $etiqueta
+                        ]
+                    );
+                }
+
+                // 2. Si es turno >= 24 horas, BLOQUEAR el día siguiente
+                
+               if ($esMayorA24h) {
+    $fechaSiguiente = Carbon::parse($fecha)->addDay()->format('Y-m-d');
+
+    $semanaSiguiente = \App\Models\Semana::where('fecha_inicio', '<=', $fechaSiguiente)
+        ->where('fecha_fin', '>=', $fechaSiguiente)
+        ->with('mes')
+        ->first();
+
+    if ($semanaSiguiente) {
+        TurnoAsignado::updateOrCreate(
+            [
+                'usuario_id'  => $request->usuario_id,
+                'fecha'       => $fechaSiguiente,
+                'servicio_id' => $request->servicio_id
+            ],
+            [
+                'servicio_id' => $asignacionServicio->servicio_id,
+                'area_id'     => $request->area_id,
+                'turno_id'    => $request->turno_id, // <-- Asigna el turno_id recibido en lugar de null
+                'semana_id'   => $semanaSiguiente->id,
+                'mes_id'      => $semanaSiguiente->mes_id,
+                'gestion_id'  => $semanaSiguiente->mes->gestion_id,
+                'estado'      => 'bloqueado',
+                'observacion' => 'Bloqueado por Post-Turno 24h'
+            ]
                 );
+                    }
+                }
             }
         });
 
-        return response()->json(['message' => 'Turnos procesados correctamente'], 201);
+        return response()->json(['message' => 'Turnos procesados correctamente.'], 201);
 
     } catch (\Exception $e) {
-        return response()->json(['message' => 'Error al guardar: ' . $e->getMessage()], 500);
+        return response()->json(['message' => $e->getMessage()], 422);
     }
 }
 
-
-
-
-
-
-
 public function getEquipoPorJerarquia($servicio_id)
 {
-    // 1. Buscamos los usuarios vinculados a este servicio
-    // Usamos 'whereHas' para filtrar por la tabla intermedia usuario_servicios
+   
     $equipo = \App\Models\User::whereHas('servicios', function($query) use ($servicio_id) {
         $query->where('servicios.id', $servicio_id)
-              ->where('usuario_servicios.estado', true); // Solo activos
+              ->where('usuario_servicios.estado', true); 
     })
     ->with(['categoria', 'persona']) // Cargamos la categoría
     ->get();
 
-    // 2. Agrupamos los resultados por el nombre de la categoría para el frontend
-    $agrupado = $equipo->groupBy(function($user) {
+       $agrupado = $equipo->groupBy(function($user) {
         return $user->categoria ? $user->categoria->nombre_categoria : 'Sin Categoría';
     })->map(function($personal, $categoriaNombre) {
         return [
@@ -124,8 +158,7 @@ public function getEquipoPorJerarquia($servicio_id)
             })
         ];
     })->values();
-
-    // 3. Retornamos la estructura que Angular espera
+  
     return response()->json([
         'equipo_visible' => $agrupado
     ]);
@@ -308,12 +341,8 @@ public function reporteSemanal(Request $request, $semana_id)
         ];
     });
 
-    // 3. Retornamos directamente la colección como un Array Plano para mantener compatibilidad
-    return response()->json($coleccionFormateada);
+      return response()->json($coleccionFormateada);
 }
-
-
-
 
 public function getEquipoFiltrado(Request $request)
 {
@@ -412,22 +441,22 @@ private function formatearTurno($ta, $novedad) {
     $nombreSolicitante = $novedad?->solicitante?->persona?->nombre_completo ?? 'N/A';
     $nombreReemplazo   = $novedad?->reemplazo?->persona?->nombre_completo ?? 'N/A';
 
-    $horaInicioFormateada = $ta->turno ? Carbon::parse($ta->turno->hora_inicio)->format('H:i') : '00:00';
-    $horaFinFormateada    = $ta->turno ? Carbon::parse($ta->turno->hora_fin)->format('H:i') : '00:00';
+    $esBloqueado = $ta->estado === 'bloqueado';
 
     return [
         'id_asignacion'   => $ta->id,
-        'servicio_id'     => $ta->servicio_id, // <--- OBLIGATORIO para que el HTML sepa diferenciar si es de otro servicio
-        'servicio_nombre' => $ta->servicio?->nombre ?? 'Sin Servicio', // <--- Nombre para la etiqueta visual
-        'nombre_turno'    => $ta->turno?->nombre_turno ?? 'Sin Turno',
-        'hora_inicio'     => $horaInicioFormateada, 
-        'hora_fin'        => $horaFinFormateada,
-        'horario'         => $ta->turno ? "{$ta->turno->hora_inicio} - {$ta->turno->hora_fin}" : 'N/A',
+        'servicio_id'     => $ta->servicio_id,
+        'servicio_nombre' => $ta->servicio?->nombre ?? 'Sin Servicio',
+        'nombre_turno'    => $esBloqueado ? 'POSGUARDIA' : ($ta->turno?->nombre_turno ?? 'Sin Turno'),
+        'hora_inicio'     => $ta->turno ? Carbon::parse($ta->turno->hora_inicio)->format('H:i') : '00:00', 
+        'hora_fin'        => $ta->turno ? Carbon::parse($ta->turno->hora_fin)->format('H:i') : '00:00',
+        'horario'         => $esBloqueado ? 'Descanso' : ($ta->turno ? "{$ta->turno->hora_inicio} - {$ta->turno->hora_fin}" : 'N/A'),
         'duracion_horas'  => $ta->turno ? (float)$ta->turno->duracion_horas : 0,
         'fecha'           => $ta->fecha,
-        'color'           => $novedad ? '#fd7e14' : ($ta->turno->color ?? '#52600c'),
+        'estado'          => $ta->estado, // <-- Importante enviar el estado
+        'color'           => $esBloqueado ? '#e2e8f0' : ($novedad ? '#fd7e14' : ($ta->turno->color ?? '#52600c')),
         'area_nombre'     => $ta->area ? $ta->area->nombre : ($ta->servicio ? $ta->servicio->nombre : 'GENERAL'),
-        'novedad' => $novedad ? [
+        'novedad'         => $novedad ? [
             'usuario_solicitante_id' => $novedad->usuario_solicitante_id,
             'usuario_reemplazo_id'   => $novedad->usuario_reemplazo_id,
             'tipo'                   => $novedad->tipo,
@@ -769,58 +798,130 @@ private function obtenerSemanaIdPorFecha($fecha) {
 }
 
 public function update(Request $request, $id)
-{
-    try {
-        $request->validate([
-            'turno_id'    => 'required|exists:turnos,id',
-            'area_id'     => 'nullable|exists:areas,id',
-            'observacion' => 'nullable|string|max:500',
-            'estado'      => 'nullable|string'
-        ]);
+    {
+        try {
+            $request->validate([
+                'turno_id'    => 'required|exists:turnos,id',
+                'area_id'     => 'nullable|exists:areas,id',
+                'observacion' => 'nullable|string|max:500',
+                'estado'      => 'nullable|string'
+            ]);
 
-        $asignacion = TurnoAsignado::findOrFail($id);
+            $asignacion = TurnoAsignado::findOrFail($id);
 
-        $asignacion->update([
-            'turno_id'    => $request->turno_id,
-            'area_id'     => $request->area_id,
-            'observacion' => $request->observacion ?? $asignacion->observacion,
-            'estado'      => $request->estado ?? $asignacion->estado,
-        ]);
+            // Obtener información del nuevo turno para evaluar la regla de 24 horas
+            $nuevoTurno = Turno::findOrFail($request->turno_id);
+            $esMayorA24h = $nuevoTurno->duracion_horas >= 24;
 
-        return response()->json([
-            'status'  => 'success',
-            'message' => 'Turno modificado correctamente',
-            'data'    => $asignacion->load(['turno', 'usuario.persona'])
-        ]);
+            DB::transaction(function () use ($request, $asignacion, $nuevoTurno, $esMayorA24h) {
+                // 1. Actualizar la asignación principal
+                $asignacion->update([
+                    'turno_id'    => $request->turno_id,
+                    'area_id'     => $request->area_id,
+                    'observacion' => $request->observacion ?? ($esMayorA24h ? 'Turno con réplica (24h)' : $asignacion->observacion),
+                    'estado'      => $request->estado ?? $asignacion->estado,
+                ]);
 
-    } catch (\Exception $e) {
-        return response()->json([
-            'status'  => 'error',
-            'message' => 'Error al actualizar: ' . $e->getMessage()
-        ], 500);
+                // 2. Gestionar el bloqueo o posguardia del día siguiente si el turno dura >= 24 horas
+                $fechaSiguiente = Carbon::parse($asignacion->fecha)->addDay()->format('Y-m-d');
+
+                if ($esMayorA24h) {
+                    $semanaSiguiente = Semana::where('fecha_inicio', '<=', $fechaSiguiente)
+                        ->where('fecha_fin', '>=', $fechaSiguiente)
+                        ->with('mes')
+                        ->first();
+
+                    if ($semanaSiguiente) {
+                        TurnoAsignado::updateOrCreate(
+                            [
+                                'usuario_id'  => $asignacion->usuario_id,
+                                'fecha'       => $fechaSiguiente,
+                                'servicio_id' => $asignacion->servicio_id
+                            ],
+                            [
+                                'servicio_id' => $asignacion->servicio_id,
+                                'area_id'     => $request->area_id,
+                                'turno_id'    => null,
+                                'semana_id'   => $semanaSiguiente->id,
+                                'mes_id'      => $semanaSiguiente->mes_id,
+                                'gestion_id'  => $semanaSiguiente->mes->gestion_id,
+                                'estado'      => 'bloqueado',
+                                'observacion' => 'Bloqueado por Post-Turno 24h'
+                            ]
+                        );
+                    }
+                } else {
+                    // Si el nuevo turno ya no dura 24h, liberamos el post-turno si existía un bloqueo previo
+                    TurnoAsignado::where('usuario_id', $asignacion->usuario_id)
+                        ->where('servicio_id', $asignacion->servicio_id)
+                        ->where('fecha', $fechaSiguiente)
+                        ->where('estado', 'bloqueado')
+                        ->delete();
+                }
+            });
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Asignación de turno actualizada correctamente.',
+                'data'    => $asignacion->fresh(['turno', 'area', 'servicio'])
+            ], 200);
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'La asignación de turno no existe.'
+            ], 404);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Error al actualizar el turno: ' . $e->getMessage()
+            ], 500);
+        }
     }
-}
 
-/**
- * ELIMINAR UN TURNO ESPECÍFICO
- */
-public function destroy($id)
-{
-    try {
-        $asignacion = TurnoAsignado::findOrFail($id);
-        $asignacion->delete();
+    /**
+     * 5. ELIMINAR ASIGNACIÓN DE TURNO
+     * Remueve la asignación y desbloquea el post-turno de 24h adyacente si existe.
+     */
+    public function destroy($id)
+    {
+        try {
+            $asignacion = TurnoAsignado::findOrFail($id);
 
-        return response()->json([
-            'status'  => 'success',
-            'message' => 'Asignación eliminada correctamente'
-        ]);
-    } catch (\Exception $e) {
-        return response()->json(['error' => $e->getMessage()], 500);
+            DB::transaction(function () use ($asignacion) {
+                $fechaSiguiente = Carbon::parse($asignacion->fecha)->addDay()->format('Y-m-d');
+
+                // Eliminar el bloqueo post-turno si fue generado por este registro de 24h
+                TurnoAsignado::where('usuario_id', $asignacion->usuario_id)
+                    ->where('servicio_id', $asignacion->servicio_id)
+                    ->where('fecha', $fechaSiguiente)
+                    ->where('estado', 'bloqueado')
+                    ->delete();
+
+                $asignacion->delete();
+            });
+
+            return response()->json([
+                'status'  => 'success',
+                'message' => 'Asignación eliminada y bloqueos liberados exitosamente.'
+            ], 200);
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'La asignación a eliminar no fue encontrada.'
+            ], 404);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'status'  => 'error',
+                'message' => 'Error al eliminar el turno: ' . $e->getMessage()
+            ], 500);
+        }
     }
-}
 
-//carga los turnos, mes servicio,  Devuelve el total de horas y días trabajados por cada persona en un servicio y mes específico.
- 
+
 public function getResumenMensual(Request $request)
 {
     $servicio_id = $request->query('servicio_id');
@@ -978,14 +1079,14 @@ public function cambiarBloqueoRol(Request $request)
     }
 }
 
-// funcion pdf reporte para multiples categorias, con bloqueo desde admin
 public function obtenerPdfReporteMensual(Request $request)
 {
     $request->validate([
         'servicio_id'  => 'required',
         'mes_id'       => 'required',
-        'categoria_id' => 'nullable'
-
+        'categoria_id' => 'nullable',
+        'fecha_inicio' => 'nullable|date',
+        'fecha_fin'    => 'nullable|date'
     ]);
 
     $user = $request->user();
@@ -993,10 +1094,9 @@ public function obtenerPdfReporteMensual(Request $request)
         return response()->json(['message' => 'No autenticado'], 401);
     }
 
-    $servicioId  = $request->input('servicio_id');
-    $mesId       = $request->input('mes_id');
-    $categoriaIds = explode(',', $request->input('categoria_id'));
-
+    $servicioId   = $request->input('servicio_id');
+    $mesId        = $request->input('mes_id');
+    $categoriaIds = array_filter(explode(',', $request->input('categoria_id')));
 
     // Consulta de bloqueo
     $estaBloqueado = DB::table('roles_estados')
@@ -1011,23 +1111,55 @@ public function obtenerPdfReporteMensual(Request $request)
         return response()->json(['message' => 'Acceso Denegado'], 403);
     }
 
-    // 1. Obtener las semanas del mes
-    $semanasMes = DB::table('semanas')
-        ->where('mes_id', $mesId)
-        ->orderBy('numero_semana', 'asc')
-        ->get();
+    // 1. Obtener las semanas del mes FILTRADAS por las categorías seleccionadas
+    $semanasQuery = DB::table('semanas')
+        ->where('mes_id', $mesId);
+
+    // Si tu tabla 'semanas' posee la columna 'categoria_id', filtramos por ella
+    if (!empty($categoriaIds) && \Schema::hasColumn('semanas', 'categoria_id')) {
+        $semanasQuery->where(function($q) use ($categoriaIds) {
+            $q->whereIn('categoria_id', $categoriaIds)
+              ->orWhereNull('categoria_id');
+        });
+    }
+
+    $semanasMes = $semanasQuery->orderBy('numero_semana', 'asc')->get();
 
     if ($semanasMes->isEmpty()) {
         return response()->json(['status' => 'error', 'message' => 'No hay semanas configuradas.'], 422);
     }
 
-    // 2. Obtener usuarios filtrados por servicio y categoría
+    // 🎯 2. DETERMINAR EL PERÍODO EXACTO (Prioriza fechas enviadas por Angular)
+    if ($request->filled('fecha_inicio') && $request->filled('fecha_fin')) {
+        $periodoExacto = "Del {$request->input('fecha_inicio')} al {$request->input('fecha_fin')}";
+    } else {
+        $semanaPrimera = $semanasMes->first();
+        $semanaUltima  = $semanasMes->last();
+        $periodoExacto = "Del {$semanaPrimera->fecha_inicio} al {$semanaUltima->fecha_fin}";
+    }
+
+
+    // 1. Obtener el parámetro ya sea 'categorias' o 'categoria_id'
+$paramCategorias = $request->input('categorias') ?? $request->input('categoria_id');
+// Convertir a Array y limpiar valores nulos o vacíos
+$categoriaIds = array_filter(explode(',', $paramCategorias));
+// 2. Si NO se enviaron categorías válidas, rechazar o forzar el filtro
+if (empty($categoriaIds)) {
+    return response()->json([
+        'status'  => 'error', 
+        'message' => 'Debe especificar al menos una categoría válida.'
+    ], 422);
+}
+
+    // 3. Obtener usuarios filtrados por servicio y categoría
     $usuariosBase = DB::table('usuario_servicios as us')
         ->join('users as u', 'us.usuario_id', '=', 'u.id')
         ->join('personas as p', 'p.user_id', '=', 'u.id')
         ->join('categorias as cat', 'u.categoria_id', '=', 'cat.id')
         ->where('us.servicio_id', $servicioId)
-        ->whereIn('u.categoria_id', $categoriaIds)
+        ->when(!empty($categoriaIds), function ($q) use ($categoriaIds) {
+            return $q->whereIn('u.categoria_id', $categoriaIds);
+        })
         ->where('us.estado', 1)
         ->select(
             'u.id as usuario_id',
@@ -1041,7 +1173,7 @@ public function obtenerPdfReporteMensual(Request $request)
     $userIdsFiltrados = $usuariosBase->pluck('usuario_id')->toArray();
     $turnosAgrupados = [];
 
-    // 3. Obtener turnos de los usuarios mapeados en el mes
+    // 4. Obtener turnos de los usuarios mapeados en el mes
     if (!empty($userIdsFiltrados)) {
         $turnosRaw = DB::table('turnos_asignados as ta')
             ->join('turnos as t', 'ta.turno_id', '=', 't.id')
@@ -1074,7 +1206,7 @@ public function obtenerPdfReporteMensual(Request $request)
         }
     }
 
-    // 4. Mapear matriz limpia
+    // 5. Mapear matriz limpia
     $personalTurnos = [];
     foreach ($usuariosBase as $u) {
         $userId = $u->usuario_id;
@@ -1082,22 +1214,15 @@ public function obtenerPdfReporteMensual(Request $request)
             'nombre'       => $u->nombre_usuario,
             'categoria'    => $u->categoria_principal,
             'tipo_salario' => $u->tipo_salario,
-            'dias_semana'  => $turnosAgrupados[$userId] ?? [] // Array indexado del 1 al 7 conteniendo todos los turnos del mes para ese día
+            'dias_semana'  => $turnosAgrupados[$userId] ?? []
         ];
     }
 
-    // 5. Cabecera estructural
-    $nombreServicio  = DB::table('servicios')->where('id', $servicioId)->value('nombre') ?? 'General';
-    $nombresCategorias = DB::table('categorias') ->whereIn('id', $categoriaIds) ->pluck('nombre')->implode(', '); 
-    $nombreCategoria = $nombresCategorias ?: 'N/A';
-    $nombreMes       = DB::table('meses')->where('id', $mesId)->value('nombre') ?? 'Mes Seleccionado';
-    
-
-
-
-    $semanaPrimera = $semanasMes->first();
-    $semanaUltima  = $semanasMes->last();
-    $periodoExacto = "Del {$semanaPrimera->fecha_inicio} al {$semanaUltima->fecha_fin}";
+    // 6. Cabecera estructural
+    $nombreServicio    = DB::table('servicios')->where('id', $servicioId)->value('nombre') ?? 'General';
+    $nombresCategorias = DB::table('categorias')->whereIn('id', $categoriaIds)->pluck('nombre')->implode(', '); 
+    $nombreCategoria   = $nombresCategorias ?: 'N/A';
+    $nombreMes         = DB::table('meses')->where('id', $mesId)->value('nombre') ?? 'Mes Seleccionado';
 
     $cabecera = [
         'titulo'          => 'ROL MENSUAL DE TURNOS',

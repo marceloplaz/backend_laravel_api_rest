@@ -264,7 +264,6 @@ public function updatePassword(Request $request, $id)
  */
 public function getRoles()
 {
-    // Importa el modelo: use App\Models\Role; al inicio del archivo
     // Consultamos la tabla 'roles' que vimos en tu Laragon
     $roles = \DB::table('roles')->where('estado', 1)->get(); 
     

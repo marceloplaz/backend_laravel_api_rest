@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Turno;
 use App\Models\Categoria;
 use App\Models\User;
-
+use App\Models\Comida;
 use App\Models\Servicio;
 use Illuminate\Http\Request;
 use App\Models\TurnoAsignado;
@@ -54,44 +54,70 @@ public function getFiltrosPorJerarquia(Request $request)
         'servicios' => $servicios
     ]);
 }
+
+
+       // RECIEN AÑADIDO REVISAR
+
 public function index(Request $request)
 {
-    // 1. Intentamos filtrar por lo que pide el Frontend (Angular suele mandar categoria_id)
     $categoriaId = $request->query('categoria_id');
     
     if ($categoriaId) {
-        $turnos = \App\Models\Turno::where('categoria_id', $categoriaId)->get();
+        // Carga los turnos filtrados junto con sus comidas asociadas
+        $turnos = Turno::with('comidas')->where('categoria_id', $categoriaId)->get();
         
-        // SI LA LISTA ESTÁ VACÍA: Mandamos todos los turnos para que no se bloquee el modal
+        // SI LA LISTA ESTÁ VACÍA: Mandamos todos los turnos (con sus comidas) para que no se bloquee el modal
         if ($turnos->isEmpty()) {
-            return response()->json(\App\Models\Turno::all());
+            return response()->json(Turno::with('comidas')->get());
         }
         
         return response()->json($turnos);
     }
 
-    // 2. Si no hay parámetros, mandamos todo
-    return response()->json(\App\Models\Turno::all());
+    // Si no hay parámetros, mandamos todos los turnos con sus comidas
+    return response()->json(Turno::with('comidas')->get());
 }
 
- public function store(Request $request)
+public function store(Request $request)
 {
     $request->validate([
-        'nombre_turno'   => 'required|string|max:100',
-        'hora_inicio'    => 'required',
-        'hora_fin'       => 'required',
-        'duracion_horas' => 'required|integer',
-        'categoria_id'   => 'required|integer' 
+        'nombre_turno'           => 'required|string|max:100',
+        'hora_inicio'            => 'required',
+        'hora_fin'               => 'required',
+        'duracion_horas'         => 'required|integer',
+        'categoria_id'           => 'required|integer',
+        'comidas'                => 'nullable|array',
+        'comidas.*.id'           => 'required|exists:comidas,id',
+        'comidas.*.dia_relativo' => 'nullable|integer|in:0,1',
     ]);
 
     try {
-        // Usamos directamente los datos validados para asegurar que 
-        // la categoria_id que viene del frontend se guarde correctamente.
-        $turno = Turno::create($request->all());
+        // 1. Crear el Turno
+        $turno = Turno::create($request->only([
+            'nombre_turno',
+            'hora_inicio',
+            'hora_fin',
+            'duracion_horas',
+            'categoria_id'
+        ]));
+
+        // 2. Asociar comidas a la tabla intermedia `turno_comida`
+        if ($request->has('comidas') && is_array($request->comidas)) {
+            foreach ($request->comidas as $comida) {
+                // Soportar tanto objeto {id: 1, dia_relativo: 0} como entero simple
+                $comidaId = is_array($comida) ? $comida['id'] : $comida;
+                $diaRelativo = (is_array($comida) && isset($comida['dia_relativo'])) ? (int)$comida['dia_relativo'] : 0;
+
+                // attach() permite guardar la misma comida con distintos 'dia_relativo'
+                $turno->comidas()->attach($comidaId, [
+                    'dia_relativo' => $diaRelativo
+                ]);
+            }
+        }
 
         return response()->json([
             'message' => 'Turno creado exitosamente',
-            'data'    => $turno
+            'data'    => $turno->load('comidas')
         ], 201);
 
     } catch (\Exception $e) {
@@ -101,7 +127,6 @@ public function index(Request $request)
         ], 500);
     }
 }
-
 
 public function reporteMensual(Request $request)
 {
@@ -119,7 +144,8 @@ public function reporteMensual(Request $request)
     // 2. Ahora filtramos usando gestion_id
    $turnos = \App\Models\TurnoAsignado::with([
         'usuario.persona', // <--- Debe ser así para entrar a la tabla personas
-        'turno', 
+        'turno',
+        'turno.comidas', 
         'area'
     ])
         ->where('mes_id', $mesId)
@@ -357,16 +383,51 @@ private function getColorPorEstado($estado) {
 
     public function show($id)
     {
-        $turno = Turno::with('servicios')->findOrFail($id);
+        $turno = Turno::with('servicios','comidas')->findOrFail($id);
         return response()->json($turno);
     }
+
 
     public function update(Request $request, $id)
     {
         $turno = Turno::findOrFail($id);
-        $turno->update($request->all());
-        return response()->json($turno);
+
+        $request->validate([
+            'nombre_turno'   => 'sometimes|required|string|max:100',
+            'hora_inicio'    => 'sometimes|required',
+            'hora_fin'       => 'sometimes|required',
+            'duracion_horas' => 'sometimes|required|integer',
+            'categoria_id'   => 'sometimes|required|integer',
+           'comidas'              => 'nullable|array',
+        'comidas.*.id'           => 'required|exists:comidas,id',
+        'comidas.*.dia_relativo' => 'nullable|integer|in:0,1',
+        ]);
+
+        $turno->update($request->only([
+            'nombre_turno',
+            'hora_inicio',
+            'hora_fin',
+            'duracion_horas',
+            'categoria_id'
+        ]));
+
+        // Sincronizar tabla intermedia turno_comida
+       if ($request->has('comidas') && is_array($request->comidas)) {
+        $syncData = [];
+        foreach ($request->comidas as $comida) {
+            $syncData[$comida['id']] = [
+                'dia_relativo' => $comida['dia_relativo'] ?? 0
+            ];
+        }
+        $turno->comidas()->sync($syncData);
     }
+
+        return response()->json([
+            'message' => 'Turno actualizado exitosamente',
+            'data'    => $turno->load('comidas')
+        ]);
+    }
+
 
     public function destroy($id)
     {

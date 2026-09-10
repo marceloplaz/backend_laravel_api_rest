@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use App\Models\Categoria;
 use App\Models\Servicio;
+use App\Models\Comida;
+
 
 class Turno extends Model
 {
@@ -42,4 +44,12 @@ class Turno extends Model
             'servicio_id'
         );
     }
+  
+
+    public function comidas()
+{
+    return $this->belongsToMany(Comida::class, 'turno_comida', 'turno_id', 'comida_id')
+                ->withPivot('dia_relativo')
+                ->withTimestamps();
+}
 }

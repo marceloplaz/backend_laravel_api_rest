@@ -33,6 +33,7 @@ class ServicioController extends Controller
             'data' => $areas
         ]);
     }
+    
 public function inicio()
 {
     $usuario = auth()->user();
