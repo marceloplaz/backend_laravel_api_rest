@@ -38,7 +38,7 @@ Route::prefix("v1")->group(function () {
     Route::put('vacaciones/{id}/aprobar', [VacacionController::class, 'aprobar']);
     Route::put('vacaciones/{id}/estado', [VacacionController::class, 'actualizarEstado']);
     Route::get('/comidas', [ComidaController::class, 'index']);
-    Route::get('/asistencia/reporte-rango', [AsistenciaController::class, 'obtenerAsistenciaRango']);
+   
 
 Route::prefix('vacaciones/kardex')->group(function () {
     Route::get('historial/{user_id}', [KardexVacacionController::class, 'mostrarHistorial']);
@@ -54,7 +54,7 @@ Route::prefix('vacaciones/kardex')->group(function () {
     Route::get('servicios-lista', [ServicioController::class, 'index']); 
     Route::get('categorias-lista', [CategoriaController::class, 'index']);
     Route::middleware('auth:sanctum')->group(function () {
-       
+    Route::get('/asistencia/reporte-rango', [AsistenciaController::class, 'obtenerAsistenciaRango']);
     $ROLES_ADMIN_FULL = 'super_admin,admin,admin_jefe_medico,admin_jefa_enfermeras,admin_jefa_servicios_generales,jefa_enfermeras';
     $ROLES_JEFATURAS  = $ROLES_ADMIN_FULL . ',jefe_medico_servicio,jefa_enfermeras_servicio,jefe_servicio';
     $ROLES_TURNOS     = $ROLES_JEFATURAS  . ',jefa_enfermeras_servicio'; 
@@ -77,8 +77,8 @@ Route::prefix('vacaciones/kardex')->group(function () {
     Route::get('servicios/inicio', [ServicioController::class, 'inicio']);
     Route::get('turnos/mis-turnos', [TurnoController::class, 'misTurnosMes']);
     Route::prefix('reportes')->group(function () {
-    // reporte de  TurnoController
-    Route::get('reporte-semanal/{semana_id}/{usuario_id?}', [TurnoController::class, 'reporteHorasSemana']);
+
+        Route::get('reporte-semanal/{semana_id}/{usuario_id?}', [TurnoController::class, 'reporteHorasSemana']);
 });
         // Consultas Base del Dashboard 
         Route::get("/roles", [UserController::class, "getRoles"]);

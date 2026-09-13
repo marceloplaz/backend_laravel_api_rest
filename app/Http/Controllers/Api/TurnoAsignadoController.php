@@ -16,6 +16,7 @@ use Carbon\Carbon;
 use Illuminate\Support\Facades\DB; // IMPORTANTE: Para corregir el error "Class DB not found"
 use Barryvdh\DomPDF\Facade\Pdf;
 
+
 class TurnoAsignadoController extends Controller
 {
     /**
