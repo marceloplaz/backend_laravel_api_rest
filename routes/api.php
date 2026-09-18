@@ -54,7 +54,10 @@ Route::prefix('vacaciones/kardex')->group(function () {
     Route::get('servicios-lista', [ServicioController::class, 'index']); 
     Route::get('categorias-lista', [CategoriaController::class, 'index']);
     Route::middleware('auth:sanctum')->group(function () {
+    
     Route::get('/asistencia/reporte-rango', [AsistenciaController::class, 'obtenerAsistenciaRango']);
+    Route::get('/asistencia/matriz-pdf', [AsistenciaController::class, 'generarMatrizPdf']);
+    
     $ROLES_ADMIN_FULL = 'super_admin,admin,admin_jefe_medico,admin_jefa_enfermeras,admin_jefa_servicios_generales,jefa_enfermeras';
     $ROLES_JEFATURAS  = $ROLES_ADMIN_FULL . ',jefe_medico_servicio,jefa_enfermeras_servicio,jefe_servicio';
     $ROLES_TURNOS     = $ROLES_JEFATURAS  . ',jefa_enfermeras_servicio'; 
