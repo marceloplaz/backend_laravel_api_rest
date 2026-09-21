@@ -8,12 +8,12 @@ use Barryvdh\DomPDF\Facade\Pdf;
 
 class AsistenciaController extends Controller
 {
-    public function obtenerAsistenciaRango(Request $request)
+public function obtenerAsistenciaRango(Request $request)
     {
         // 1. VALIDACIÓN DE INPUTS
         $validated = $request->validate([
             'ci'           => 'nullable|string',
-            'usuario_id'   => 'nullable|string', // Acepta tanto ID de usuario como CI
+            'usuario_id'   => 'nullable|string',
             'fecha_inicio' => 'required|date',
             'fecha_fin'    => 'required|date|after_or_equal:fecha_inicio',
         ]);
@@ -29,7 +29,7 @@ class AsistenciaController extends Controller
             return response()->json(['message' => 'Unauthenticated.'], 401);
         }
 
-        // 3. ROLES
+        // 3. ROLES Y PRIVILEGIOS
         $esSuperAdmin = method_exists($usuarioAutenticado, 'hasAnyRole') 
             ? $usuarioAutenticado->hasAnyRole(['super_admin', 'admin']) 
             : false;
@@ -38,15 +38,13 @@ class AsistenciaController extends Controller
         $categoriasPermitidas = [];
         $serviciosPermitidos  = [];
 
-        // 4. OBTENCIÓN DINÁMICA DE PERMISOS (Basado en roles y tablas pivote)
+        // 4. OBTENCIÓN DINÁMICA DE PERMISOS
         if (!$esSuperAdmin) {
-            // 4.1. Obtener IDs de roles del usuario desde 'role_user'
             $roleIds = DB::table('role_user')
                 ->where('user_id', $usuarioAutenticado->id)
                 ->pluck('role_id')
                 ->toArray();
 
-            // 4.2. Obtener categorías permitidas desde 'categoria_role' + categoría directa del usuario
             $categoriasPermitidas = DB::table('categoria_role')
                 ->whereIn('role_id', $roleIds)
                 ->pluck('categoria_id')
@@ -57,7 +55,6 @@ class AsistenciaController extends Controller
                 $categoriasPermitidas = array_unique($categoriasPermitidas);
             }
 
-            // 4.3. Obtener servicios permitidos desde 'role_servicio' + 'usuario_servicios' (si aplica)
             $serviciosPorRol = DB::table('role_servicio')
                 ->whereIn('role_id', $roleIds)
                 ->pluck('servicio_id')
@@ -70,12 +67,10 @@ class AsistenciaController extends Controller
 
             $serviciosPermitidos = array_unique(array_merge($serviciosPorRol, $serviciosPorUsuario));
 
-            // Si el usuario no tiene ni servicio ni categoría asociada, no ve registros
             if (empty($serviciosPermitidos) && empty($categoriasPermitidas)) {
                 return response()->json(['status' => 'success', 'data' => []]);
             }
 
-            // 4.4. Consulta base de personas permitidas para listados generales
             $queryCis = DB::table('users as u')
                 ->join('personas as p', 'p.user_id', '=', 'u.id')
                 ->whereNotNull('p.carnet_identidad');
@@ -110,7 +105,7 @@ class AsistenciaController extends Controller
                 ->toArray();
         }
 
-        // 5. TRADUCCIÓN AUTODETECTABLE DE BUSQUEDA (CI / USUARIO_ID)
+        // 5. TRADUCCIÓN AUTODETECTABLE DE BÚSQUEDA
         $ciObjetivo = null;
 
         if (!empty($inputCi)) {
@@ -134,7 +129,6 @@ class AsistenciaController extends Controller
         if ($ciObjetivo !== null) {
             $ciLimpioBuscado = trim((string)$ciObjetivo);
 
-            // Si NO es super_admin, validamos si el empleado buscado cumple con pertenecer a los filtros permitidos
             if (!$esSuperAdmin)  {
                 $tienePermisoEmpleado = DB::table('users as u')
                     ->join('personas as p', 'p.user_id', '=', 'u.id')
@@ -180,7 +174,7 @@ class AsistenciaController extends Controller
 
         $marcaciones = $queryAsistencia->orderBy('FechaAsistencia', 'ASC')->get();
 
-        // 7. OBTENER TURNOS Y SERVICIOS EN MYSQL
+        // 7. OBTENER TURNOS Y SERVICIOS EN MYSQL (INCLUYENDO 1 DÍA ANTES PARA GUARDIAS)
         $cisEncontrados = $marcaciones->pluck('CI')
             ->filter()
             ->map(fn($i) => trim((string)$i))
@@ -190,13 +184,16 @@ class AsistenciaController extends Controller
 
         $turnosProgramados = [];
         if (!empty($cisEncontrados)) {
+            // Consultar desde 1 día antes para detectar guardias/turnos del día previo
+            $fechaInicioConsulta = Carbon::parse($fechaInicio)->subDay()->format('Y-m-d');
+
             $turnosProgramados = DB::table('turnos_asignados as ta')
                 ->join('users as u', 'ta.usuario_id', '=', 'u.id')
                 ->join('personas as p', 'p.user_id', '=', 'u.id')
                 ->join('turnos as t', 'ta.turno_id', '=', 't.id')
                 ->leftJoin('servicios as s', 'ta.servicio_id', '=', 's.id')
                 ->whereIn(DB::raw('TRIM(p.carnet_identidad)'), $cisEncontrados)
-                ->whereBetween('ta.fecha', [$fechaInicio, $fechaFin])
+                ->whereBetween('ta.fecha', [$fechaInicioConsulta, $fechaFin])
                 ->select([
                     'p.carnet_identidad as ci',
                     'ta.fecha',
@@ -211,98 +208,89 @@ class AsistenciaController extends Controller
                 });
         }
 
-       // 8. MAPEO Y CÁLCULO CON SOPORTE PARA TURNOS NOCTURNOS (CRUCE DE MEDIANOCHE)
-        $marcacionesConsumidas = [];
-
-        // 8.1. REUBICAR SALIDAS DE TURNOS NOCTURNOS (Ej: 19:00 - 07:00)
-        foreach ($marcaciones as $item) {
+        // 8. MAPEO Y CÁLCULO EVALUANDO TURNO NOCTURNO O GUARDIA DE 24H/30H
+        $resultado = $marcaciones->map(function ($item) use ($turnosProgramados) {
             $fechaActual = Carbon::parse($item->FechaAsistencia)->format('Y-m-d');
             $ciLimpio    = trim((string)$item->CI);
-            $keyActual   = $ciLimpio . '_' . $fechaActual;
 
-            $turno = $turnosProgramados[$keyActual] ?? null;
+            $horaIngreso = $item->HoraIngreso ? Carbon::parse($item->HoraIngreso)->format('H:i:s') : null;
+            $horaSalida  = $item->HoraSalida ? Carbon::parse($item->HoraSalida)->format('H:i:s') : null;
 
-            // Verificar si hay turno asignado y si cruza la medianoche
-            if ($turno && $turno->hora_inicio && $turno->hora_fin) {
-                $entradaOficial = Carbon::parse($fechaActual . ' ' . $turno->hora_inicio);
-                $salidaOficial  = Carbon::parse($fechaActual . ' ' . $turno->hora_fin);
+            // Limpiar duplicado generado por MIN() / MAX() en SQL Server si son idénticos
+            if ($horaIngreso && $horaIngreso === $horaSalida) {
+                $horaSalida = null;
+            }
 
-                if ($salidaOficial->lessThanOrEqualTo($entradaOficial)) {
-                    $salidaOficial->addDay(); // La salida oficial corresponde al día siguiente D+1
-                    $fechaSiguiente = Carbon::parse($fechaActual)->addDay()->format('Y-m-d');
+            // 8.1. VERIFICAR TURNO DEL DÍA ANTERIOR (NOCTURNO, 24H, 30H O POSGUARDIA)
+            $fechaAnterior = Carbon::parse($fechaActual)->subDay()->format('Y-m-d');
+            $keyAnterior   = $ciLimpio . '_' . $fechaAnterior;
+            $turnoAnterior = $turnosProgramados[$keyAnterior] ?? null;
 
-                    // Buscar marcación en la mañana del día siguiente para el mismo funcionario
-                    foreach ($marcaciones as $mSig) {
-                        $fechaSig = Carbon::parse($mSig->FechaAsistencia)->format('Y-m-d');
-                        $ciSig    = trim((string)$mSig->CI);
+            $esSalidaNocturna = false;
+            $turnoEvaluado    = null;
 
-                        if ($ciSig === $ciLimpio && $fechaSig === $fechaSiguiente) {
-                            $horaPunch = $mSig->HoraIngreso ?? $mSig->HoraSalida;
-                            if ($horaPunch) {
-                                $punchCarbon = Carbon::parse($fechaSiguiente . ' ' . $horaPunch);
-                                
-                                // Ventana de tolerancia de salida (3 horas antes o 4 horas después de la hora fin oficial)
-                                $ventanaMin = (clone $salidaOficial)->subHours(3);
-                                $ventanaMax = (clone $salidaOficial)->addHours(4);
+            if ($turnoAnterior) {
+                $hInicioAnt     = is_array($turnoAnterior) ? ($turnoAnterior['hora_inicio'] ?? null) : ($turnoAnterior->hora_inicio ?? null);
+                $hFinAnt        = is_array($turnoAnterior) ? ($turnoAnterior['hora_fin'] ?? null) : ($turnoAnterior->hora_fin ?? null);
+                $nombreTurnoAnt = strtoupper(is_array($turnoAnterior) ? ($turnoAnterior['nombre_turno'] ?? '') : ($turnoAnterior->nombre_turno ?? ''));
 
-                                if ($punchCarbon->between($ventanaMin, $ventanaMax)) {
-                                    // Asignar esta marcación como la HORA DE SALIDA del turno nocturno (Día D)
-                                    $item->HoraSalidaReubicada = $horaPunch;
+                if ($hInicioAnt && $hFinAnt) {
+                    $inicioAntCarbon = Carbon::parse($hInicioAnt);
+                    $finAntCarbon    = Carbon::parse($hFinAnt);
 
-                                    // Marcar como consumida para que no aparezca como un ingreso sin turno el día D+1
-                                    $keyConsumo = $ciLimpio . '_' . $fechaSiguiente . '_' . $horaPunch;
-                                    $marcacionesConsumidas[$keyConsumo] = true;
-                                    break;
-                                }
+                    // Detección de Turno Extendido / Guardia / Nocturno / Posguardia
+                    $esTurnoExtendido = ($finAntCarbon->lessThanOrEqualTo($inicioAntCarbon))
+                        || str_contains($nombreTurnoAnt, '30')
+                        || str_contains($nombreTurnoAnt, '24')
+                        || str_contains($nombreTurnoAnt, 'GUARDIA')
+                        || str_contains($nombreTurnoAnt, 'POSGUARDIA');
+
+                    if ($esTurnoExtendido) {
+                        $salidaOficialActual = Carbon::parse($fechaActual . ' ' . $hFinAnt);
+
+                        if ($horaIngreso && !$horaSalida) {
+                            $punchCarbon = Carbon::parse($fechaActual . ' ' . $horaIngreso);
+
+                            // VENTANA AJUSTADA:
+                            // - Mínimo: 30 minutos antes de la salida oficial (evita absorber salidas no justificadas)
+                            // - Máximo: Hasta 4 horas después de la salida oficial (captura demoras de entrega de guardia)
+                            $ventanaMin = (clone $salidaOficialActual)->subMinutes(30);
+                            $ventanaMax = (clone $salidaOficialActual)->addHours(4);
+
+                            if ($punchCarbon->between($ventanaMin, $ventanaMax)) {
+                                // REUBICAR DE INGRESO A SALIDA
+                                $horaSalida       = $horaIngreso;
+                                $horaIngreso      = null;
+                                $esSalidaNocturna = true;
+                                $turnoEvaluado    = $turnoAnterior;
                             }
                         }
                     }
                 }
             }
-        }
 
-        // 8.2. FILTRAR REGISTROS MOVIDOS Y CONSTRUIR RESULTADO
-        $resultado = $marcaciones->reject(function ($item) use ($marcacionesConsumidas) {
-            $fecha    = Carbon::parse($item->FechaAsistencia)->format('Y-m-d');
-            $ciLimpio = trim((string)$item->CI);
-            $hora     = $item->HoraIngreso ?? $item->HoraSalida;
+            // 8.2. OBTENER TURNO DEL DÍA ACTUAL
+            $keyActual        = $ciLimpio . '_' . $fechaActual;
+            $turnoActual      = $turnosProgramados[$keyActual] ?? null;
+            $turnoParaCalculo = $esSalidaNocturna ? $turnoEvaluado : $turnoActual;
 
-            $keyConsumo = $ciLimpio . '_' . $fecha . '_' . $hora;
-
-            // Ocultar del día actual la marcación que fue reubicada como salida del turno nocturno previo
-            return isset($marcacionesConsumidas[$keyConsumo]);
-        })->map(function ($item) use ($turnosProgramados) {
-            $retrasoMinutos   = 0;
-            $salidaTemprana   = false;
-            $minutosTemprano  = 0;
-            $horaIngreso      = $item->HoraIngreso;
-            
-            // Usar la salida reubicada si existió cruce de medianoche; de lo contrario la salida normal
-            $horaSalida       = $item->HoraSalidaReubicada ?? $item->HoraSalida;
-            $fecha            = Carbon::parse($item->FechaAsistencia)->format('Y-m-d');
-            $ciLimpio         = trim((string)$item->CI);
-
-            $key   = $ciLimpio . '_' . $fecha;
-            $turno = isset($turnosProgramados[$key]) ? $turnosProgramados[$key] : null;
-
-            if ($horaIngreso && $horaIngreso === $horaSalida && !isset($item->HoraSalidaReubicada)) {
-                $horaSalida = null;
-            }
-
+            $retrasoMinutos     = 0;
+            $salidaTemprana     = false;
+            $minutosTemprano    = 0;
             $horaEntradaOficial = null;
             $horaSalidaOficial  = null;
             $servicioNombre     = 'Sin servicio asignado';
             $toleranciaMin      = 5;
 
-            if ($turno) {
-                $horaEntradaOficial = $turno->hora_inicio;
-                $horaSalidaOficial  = $turno->hora_fin;
-                $servicioNombre     = $turno->servicio_nombre ?? 'General';
+            if ($turnoParaCalculo) {
+                $horaEntradaOficial = is_array($turnoParaCalculo) ? ($turnoParaCalculo['hora_inicio'] ?? null) : ($turnoParaCalculo->hora_inicio ?? null);
+                $horaSalidaOficial  = is_array($turnoParaCalculo) ? ($turnoParaCalculo['hora_fin'] ?? null) : ($turnoParaCalculo->hora_fin ?? null);
+                $servicioNombre     = is_array($turnoParaCalculo) ? ($turnoParaCalculo['servicio_nombre'] ?? 'General') : ($turnoParaCalculo->servicio_nombre ?? 'General');
 
-                // Cálculo de Retraso en Ingreso
+                // Cálculo de Retraso de Ingreso (Solo si conserva hora_ingreso en el día actual)
                 if ($horaIngreso && $horaEntradaOficial) {
-                    $ingresoCarbon        = Carbon::parse($fecha . ' ' . $horaIngreso);
-                    $entradaOficialCarbon = Carbon::parse($fecha . ' ' . $horaEntradaOficial);
+                    $ingresoCarbon        = Carbon::parse($fechaActual . ' ' . $horaIngreso);
+                    $entradaOficialCarbon = Carbon::parse($fechaActual . ' ' . $horaEntradaOficial);
                     $limiteTolerancia     = (clone $entradaOficialCarbon)->addMinutes($toleranciaMin)->endOfMinute();
 
                     if ($ingresoCarbon->greaterThan($limiteTolerancia)) {
@@ -311,24 +299,28 @@ class AsistenciaController extends Controller
                     }
                 }
 
-                // Cálculo de Salida Temprana (Ajustado para fechas distintas)
+                // Cálculo de Salida Temprana (Evalúa la marcación reubicada a la hora de salida)
                 if ($horaSalida && $horaSalidaOficial) {
-                    $fechaSalidaReal = isset($item->HoraSalidaReubicada) 
-                        ? Carbon::parse($fecha)->addDay()->format('Y-m-d') 
-                        : $fecha;
-
-                    $salidaCarbon        = Carbon::parse($fechaSalidaReal . ' ' . $horaSalida);
-                    $salidaOficialCarbon = Carbon::parse($fecha . ' ' . $horaSalidaOficial);
-
-                    if ($salidaOficialCarbon->lessThanOrEqualTo(Carbon::parse($fecha . ' ' . $horaEntradaOficial))) {
-                        $salidaOficialCarbon->addDay();
-                    }
+                    $salidaCarbon        = Carbon::parse($fechaActual . ' ' . $horaSalida);
+                    $salidaOficialCarbon = Carbon::parse($fechaActual . ' ' . $horaSalidaOficial);
 
                     if ($salidaCarbon->lessThan($salidaOficialCarbon)) {
                         $salidaTemprana  = true;
                         $minutosTemprano = (int) round($salidaCarbon->diffInMinutes($salidaOficialCarbon, true), 0);
                     }
                 }
+            }
+
+            $nombreTurnoMostrar = 'Sin Turno';
+            if ($turnoActual) {
+                $nombreTurnoMostrar = is_array($turnoActual) ? ($turnoActual['nombre_turno'] ?? 'Sin Turno') : ($turnoActual->nombre_turno ?? 'Sin Turno');
+            }
+
+            $estadoTexto = 'A tiempo';
+            if ($retrasoMinutos > 0) {
+                $estadoTexto = $retrasoMinutos . ' min de retraso';
+            } elseif ($salidaTemprana) {
+                $estadoTexto = 'Salida antes de hora (' . $minutosTemprano . ' min)';
             }
 
             return [
@@ -350,15 +342,18 @@ class AsistenciaController extends Controller
                 'tiene_retraso'    => $retrasoMinutos > 0,
                 'salida_temprana'  => $salidaTemprana,
                 'minutos_temprano' => $minutosTemprano,
+                'estado_texto'     => $estadoTexto, 
                 'turno_programado' => [
-                    'nombre'      => $turno ? $turno->nombre_turno : 'Sin Turno',
+                    'nombre'      => $nombreTurnoMostrar,
                     'servicio'    => $servicioNombre,
                     'hora_inicio' => $horaEntradaOficial ? Carbon::parse($horaEntradaOficial)->format('H:i') : null,
                     'hora_fin'    => $horaSalidaOficial ? Carbon::parse($horaSalidaOficial)->format('H:i') : null,
                 ]
+        
             ];
-        });
-        return response()->json(['status' => 'success', 'data' => $resultado->values()]);         
+        })->values();
+
+        return response()->json(['status' => 'success', 'data' => $resultado]);
     }
     
 public function generarMatrizPdf(Request $request)
