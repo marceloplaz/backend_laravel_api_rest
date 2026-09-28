@@ -57,6 +57,7 @@ Route::prefix('vacaciones/kardex')->group(function () {
     
     Route::get('/asistencia/reporte-rango', [AsistenciaController::class, 'obtenerAsistenciaRango']);
     Route::get('/asistencia/matriz-pdf', [AsistenciaController::class, 'generarMatrizPdf']);
+    Route::get('/asistencia/matriz', [AsistenciaController::class, 'obtenerMatrizAsistencia']);
     
     $ROLES_ADMIN_FULL = 'super_admin,admin,admin_jefe_medico,admin_jefa_enfermeras,admin_jefa_servicios_generales,jefa_enfermeras';
     $ROLES_JEFATURAS  = $ROLES_ADMIN_FULL . ',jefe_medico_servicio,jefa_enfermeras_servicio,jefe_servicio';
