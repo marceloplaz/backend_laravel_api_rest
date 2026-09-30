@@ -6,7 +6,7 @@
     <style>
         @page {
             size: letter landscape;
-            margin: 8mm;
+            margin: 6mm;
         }
         body {
             font-family: Helvetica, Arial, sans-serif;
@@ -20,12 +20,14 @@
             font-size: 11px;
             font-weight: bold;
             margin-bottom: 2px;
+            text-transform: uppercase;
         }
         .sub-title {
             text-align: center;
             font-size: 10px;
             font-weight: bold;
             margin-bottom: 6px;
+            text-transform: uppercase;
         }
         .info-bar {
             font-size: 8px;
@@ -40,26 +42,28 @@
             table-layout: fixed;
         }
         th, td {
-            border: 1px solid #777;
+            border: 1px solid #666;
             text-align: center;
             padding: 2px 1px;
             overflow: hidden;
             word-wrap: break-word;
+            vertical-align: middle;
         }
         th {
             background-color: #e6e6e6;
-            font-size: 7px;
+            font-size: 6.5px;
             font-weight: bold;
         }
-        .col-n { width: 18px; }
-        .col-ci { width: 45px; }
-        .col-nombre { text-align: left; padding-left: 3px; width: 105px; font-weight: bold; }
-        .col-dia { width: 15px; }
-        .col-totales { width: 25px; font-weight: bold; }
-        .col-obs { width: 75px; font-size: 6px; text-align: left; padding-left: 2px; }
+        .col-n { width: 16px; }
+        .col-ci { width: 42px; }
+        .col-nombre { text-align: left; padding-left: 3px; width: 100px; font-weight: bold; font-size: 6.5px; }
+        .col-dia { width: 15px; font-size: 6.5px; }
+        .col-totales { width: 26px; font-weight: bold; font-size: 6.5px; }
+        .col-obs { width: 80px; font-size: 5.5px; text-align: left; padding-left: 2px; }
         
         .text-presente { color: #0044cc; font-weight: bold; }
         .text-falta { color: #cc0000; font-weight: bold; }
+        .text-permiso { color: #885500; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -77,7 +81,7 @@
             <tr>
                 <th rowspan="2" class="col-n">N°</th>
                 <th rowspan="2" class="col-ci">CEDULA</th>
-                <th rowspan="2" class="col-nombre">NOMBRES APELLIDOS</th>
+                <th rowspan="2" class="col-nombre">NOMBRES Y APELLIDOS</th>
                 
                 {{-- Días del mes (1 al 31) --}}
                 @foreach($fechasRango as $fec)
@@ -89,7 +93,7 @@
                 <th rowspan="2" class="col-obs">OBSERVACIONES</th>
             </tr>
             <tr>
-                {{-- Día de la semana (L, M, Mi, J, V, S, D) --}}
+                {{-- Día de la semana (L, M, M, J, V, S, D) --}}
                 @foreach($fechasRango as $fec)
                     <th class="col-dia" style="font-size: 5px; background-color: #f2f2f2;">
                         {{ mb_strtoupper(mb_substr(\Carbon\Carbon::parse($fec)->locale('es')->dayName, 0, 1)) }}
@@ -108,7 +112,9 @@
                         @php 
                             $infoDia = $emp['dias'][$fec]['estado'] ?? '';
                         @endphp
-                        <td>{{ $infoDia }}</td>
+                        <td class="{{ $infoDia === 'F' ? 'text-falta' : ($infoDia === 'PER' ? 'text-permiso' : 'text-presente') }}">
+    {{ $infoDia }}
+</td>
                     @endforeach
 
                     <td>{{ $emp['total_minutos_atraso'] > 0 ? $emp['total_minutos_atraso'] : '' }}</td>
