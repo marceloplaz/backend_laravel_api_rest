@@ -190,15 +190,17 @@ class AsistenciaController extends Controller
                     $servicioNombre     = $turnoParaCalculo->servicio_nombre ?? 'General';
                     $duracionCalculo    = (float)($turnoParaCalculo->duracion_horas ?? 0);
 
-                    if ($horaIngreso && $horaEntradaOficial) {
-                        $ingresoCarbon        = Carbon::parse($fechaActual . ' ' . $horaIngreso);
-                        $entradaOficialCarbon = Carbon::parse($fechaActual . ' ' . $horaEntradaOficial);
-                        $limiteTolerancia     = (clone $entradaOficialCarbon)->addMinutes(5)->endOfMinute();
+                   if ($horaIngreso && $horaEntradaOficial) {
+    $ingresoCarbon        = Carbon::parse($fechaActual . ' ' . $horaIngreso);
+    $entradaOficialCarbon = Carbon::parse($fechaActual . ' ' . $horaEntradaOficial);
+    $limiteTolerancia     = (clone $entradaOficialCarbon)->addMinutes(5);
 
-                        if ($ingresoCarbon->greaterThan($limiteTolerancia)) {
-                            $retrasoMinutos = (int) floor($entradaOficialCarbon->diffInMinutes($ingresoCarbon, true));
-                        }
-                    }
+    if ($ingresoCarbon->greaterThan($limiteTolerancia)) {
+        $retrasoMinutos = (int) floor($limiteTolerancia->diffInMinutes($ingresoCarbon, true));
+    } else {
+        $retrasoMinutos = 0;
+    }
+}
 
                     if ($horaSalida && $horaSalidaOficial) {
                         $salidaCarbon        = Carbon::parse($fechaActual . ' ' . $horaSalida);
@@ -236,6 +238,13 @@ class AsistenciaController extends Controller
                     'permiso_fin'      => $item->PermisoFechaFin ?? null,
                     'duracion'         => $item->Duracion ?? null,
                     'gestiones'        => $item->Gestiones ?? null,
+                    
+                    'feriado_descripcion' => $item->DescripcionFeriadoTolerancia ?? 'Laboral',
+                    'tipo_jornada'        => $item->TipoJornadaEspecial ?? 'Laboral',
+                    'alcance_codigo'      => $item->AlcanceCodigo ?? null,
+                    'alcance_descripcion' => $item->AlcanceDescripcion ?? 'N/A',
+
+
                     'minutos_retraso'  => $retrasoMinutos,
                     'tiene_retraso'    => $retrasoMinutos > 0,
                     'salida_temprana'  => $salidaTemprana,
@@ -246,7 +255,9 @@ class AsistenciaController extends Controller
                         'servicio'    => $servicioNombre,
                         'hora_inicio' => $horaEntradaOficial ? Carbon::parse($horaEntradaOficial)->format('H:i') : null,
                         'hora_fin'    => $horaSalidaOficial ? Carbon::parse($horaSalidaOficial)->format('H:i') : null,
-                    ]
+
+
+                        ]
                 ];
             })->all();
         });
@@ -404,11 +415,14 @@ class AsistenciaController extends Controller
             foreach ($fechasRango as $fec) {
                 if (in_array($fec, $diasCubiertosContinuos)) {
                     $diasDetalle[$fec] = [
-                        'estado'          => '',
-                        'hora_ingreso'    => null,
-                        'hora_salida'     => null,
-                        'minutos_retraso' => 0,
-                        'permiso'         => null
+                        'estado'              => '',
+                        'hora_ingreso'        => null,
+                        'hora_salida'         => null,
+                        'minutos_retraso'     => 0,
+                        'permiso'             => null,
+                        'feriado_descripcion' => 'Laboral',
+                        'tipo_jornada'        => 'Laboral',
+                        'alcance_descripcion' => 'N/A'
                     ];
                     continue;
                 }
@@ -422,6 +436,11 @@ class AsistenciaController extends Controller
                 $horaIngreso   = isset($marcacion->HoraIngreso) ? Carbon::parse($marcacion->HoraIngreso)->format('H:i:s') : null;
                 $horaSalida    = isset($marcacion->HoraSalida) ? Carbon::parse($marcacion->HoraSalida)->format('H:i:s') : null;
                 $permisoNombre = $marcacion->NombrePermiso ?? null;
+
+                // --- CAPTURAR NUEVOS CAMPOS DE FERIADOS Y TOLERANCIAS ---
+                $feriadoDesc   = $marcacion->DescripcionFeriadoTolerancia ?? 'Laboral';
+                $tipoJornada   = $marcacion->TipoJornadaEspecial ?? 'Laboral'; // Ej: Feriado, Tolerancia, Laboral
+                $alcanceDesc   = $marcacion->AlcanceDescripcion ?? 'N/A';
 
                 if ($horaIngreso && $horaIngreso === $horaSalida) {
                     $horaSalida = null;
@@ -462,13 +481,19 @@ class AsistenciaController extends Controller
                     }
                 }
 
+                // --- EVALUAR SI ES FERIADO O TOLERANCIA DESDE SQL SERVER ---
+                if ($tipoJornada === 'Feriado' || $tipoJornada === 'Tolerancia') {
+                    $diasFeriado++;
+                    $observacionesList[] = $carbonFecha->format('d/m/Y') . ": {$feriadoDesc} ({$tipoJornada})";
+                }
+
                 $estadoDia = '';
 
                 if ($horaIngreso || $horaSalida) {
                     $diasEfectTrabajados++;
 
                     if ($horaIngreso && $horaSalida) {
-                        $timeIngreso = Carbon::parse($fec . ' ' . $horaIngreso);
+                        $timeIngreso   = Carbon::parse($fec . ' ' . $horaIngreso);
 
                         if ($esTurnoContinuoCruzado) {
                             $timeSalida = Carbon::parse($fechaSiguiente . ' ' . $horaSalida);
@@ -507,22 +532,33 @@ class AsistenciaController extends Controller
                         }
                     }
                 } elseif ($turnoDia) {
-                    $estadoDia = $permisoNombre ? 'PER' : 'F';
-                    if (!$permisoNombre) {
-                        $faltasCount++;
+                    // Si hay turno asignado pero no marcó, verificamos que no sea Feriado/Tolerancia antes de marcar Falta (F)
+                    if ($tipoJornada === 'Feriado' || $tipoJornada === 'Tolerancia') {
+                        $estadoDia = strtoupper(substr($tipoJornada, 0, 3)); // Ej: FER o TOL
+                    } else {
+                        $estadoDia = $permisoNombre ? 'PER' : 'F';
+                        if (!$permisoNombre) {
+                            $faltasCount++;
+                        }
                     }
                 } elseif ($permisoNombre) {
                     $estadoDia = 'PER';
+                } elseif ($tipoJornada === 'Feriado' || $tipoJornada === 'Tolerancia') {
+                    $estadoDia = strtoupper(substr($tipoJornada, 0, 3));
                 } elseif ($esFinDeSemana) {
                     $diasFinSemana++;
                 }
 
+                // --- AGREGAR LOS NUEVOS CAMPOS AL ARRAY DE DETALLE DIARIO ---
                 $diasDetalle[$fec] = [
-                    'estado'          => $estadoDia,
-                    'hora_ingreso'    => $horaIngreso,
-                    'hora_salida'     => $horaSalida,
-                    'minutos_retraso' => $retrasoMin,
-                    'permiso'         => $permisoNombre
+                    'estado'              => $estadoDia,
+                    'hora_ingreso'        => $horaIngreso,
+                    'hora_salida'         => $horaSalida,
+                    'minutos_retraso'     => $retrasoMin,
+                    'permiso'             => $permisoNombre,
+                    'feriado_descripcion' => $feriadoDesc,
+                    'tipo_jornada'        => $tipoJornada,
+                    'alcance_descripcion' => $alcanceDesc
                 ];
             }
 
