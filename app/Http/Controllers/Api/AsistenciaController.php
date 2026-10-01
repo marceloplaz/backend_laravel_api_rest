@@ -5,13 +5,15 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Carbon\Carbon;
 use Barryvdh\DomPDF\Facade\Pdf;
 
 class AsistenciaController extends Controller
 {
     /**
-     * Endpoint API: Retorna el detalle diario de marcaciones para un usuario o rango.
+     * Endpoint API: Retorna el detalle diario de marcaciones para un usuario o rango (PAGINADO Y CACHEADO).
      */
     public function obtenerAsistenciaRango(Request $request)
     {
@@ -20,12 +22,18 @@ class AsistenciaController extends Controller
             'usuario_id'   => 'nullable|string',
             'fecha_inicio' => 'required|date',
             'fecha_fin'    => 'required|date|after_or_equal:fecha_inicio',
+            'per_page'     => 'nullable|integer|min:1|max:100',
+            'page'         => 'nullable|integer|min:1',
+            'categoria_id' => 'nullable|integer',
         ]);
 
         $inputCi     = $validated['ci'] ?? null;
         $usuarioId   = $validated['usuario_id'] ?? null;
+        $categoriaId = $validated['categoria_id'] ?? null;
         $fechaInicio = $validated['fecha_inicio'];
         $fechaFin    = $validated['fecha_fin'];
+        $perPage     = (int) ($validated['per_page'] ?? 15);
+        $page        = (int) ($validated['page'] ?? 1);
 
         $usuarioAutenticado = $request->user();
         if (!$usuarioAutenticado) {
@@ -37,179 +45,234 @@ class AsistenciaController extends Controller
             return response()->json(['status' => 'success', 'data' => []]);
         }
 
-        $ciObjetivo = null;
-        if (!empty($inputCi)) {
-            $ciObjetivo = trim((string)$inputCi);
-        } elseif (!empty($usuarioId)) {
-            $valorBusqueda = trim((string)$usuarioId);
-            if (strlen($valorBusqueda) >= 5) {
-                $ciObjetivo = $valorBusqueda;
-            } else {
-                $ciPersona = DB::table('personas')->where('user_id', $valorBusqueda)->value('carnet_identidad');
-                $ciObjetivo = $ciPersona ? trim($ciPersona) : $valorBusqueda;
-            }
-        }
+        // 1. Clave única de caché que incluye al usuario autenticado (para respetar permisos) y los filtros
+        $ciKey   = $inputCi ? trim($inputCi) : 'todos';
+        $usrKey  = $usuarioId ? trim($usuarioId) : 'todos';
+        $catKey  = $categoriaId ?? 'todas';
+        $userAuthId = $usuarioAutenticado->id;
 
-        $queryAsistencia = DB::connection('sqlsrv_rrhh')
-            ->table('V_asistencia_permisos')
-            ->whereBetween('FechaAsistencia', [$fechaInicio, $fechaFin]);
+        $cacheKey = "asistencia_rango_u{$userAuthId}_ci{$ciKey}_usr{$usrKey}_cat{$catKey}_{$fechaInicio}_{$fechaFin}";
 
-        if ($ciObjetivo !== null) {
-            $queryAsistencia->whereRaw("REPLACE(LTRIM(RTRIM(CI)), ' ', '') = ?", [trim((string)$ciObjetivo)]);
-        } elseif (!$permisos['esSuperAdmin'] && !empty($permisos['cis'])) {
-            $queryAsistencia->whereIn(DB::raw("REPLACE(LTRIM(RTRIM(CI)), ' ', '')"), $permisos['cis']);
-        }
-
-        $marcaciones = $queryAsistencia->orderBy('FechaAsistencia', 'ASC')->get();
-
-        if ($marcaciones->isEmpty()) {
-            return response()->json(['status' => 'success', 'data' => []]);
-        }
-
-        $cisEncontrados = $marcaciones->pluck('CI')->filter()->map(fn($i) => trim((string)$i))->unique()->values()->toArray();
-        $fechaInicioConsulta = Carbon::parse($fechaInicio)->subDay()->format('Y-m-d');
-
-        $turnosProgramados = DB::table('turnos_asignados as ta')
-            ->join('users as u', 'ta.usuario_id', '=', 'u.id')
-            ->join('personas as p', 'p.user_id', '=', 'u.id')
-            ->join('turnos as t', 'ta.turno_id', '=', 't.id')
-            ->leftJoin('servicios as s', 'ta.servicio_id', '=', 's.id')
-            ->whereIn(DB::raw('TRIM(p.carnet_identidad)'), $cisEncontrados)
-            ->whereBetween('ta.fecha', [$fechaInicioConsulta, $fechaFin])
-            ->select([
-                'p.carnet_identidad as ci',
-                'ta.fecha',
-                't.nombre_turno',
-                't.hora_inicio',
-                't.hora_fin',
-                't.duracion_horas',
-                's.nombre as servicio_nombre'
-            ])
-            ->get()
-            ->keyBy(fn($item) => trim((string)$item->ci) . '_' . Carbon::parse($item->fecha)->format('Y-m-d'));
-
-        $resultado = $marcaciones->map(function ($item) use ($turnosProgramados) {
-            $fechaActual = Carbon::parse($item->FechaAsistencia)->format('Y-m-d');
-            $ciLimpio    = trim((string)$item->CI);
-
-            $horaIngreso = $item->HoraIngreso ? Carbon::parse($item->HoraIngreso)->format('H:i:s') : null;
-            $horaSalida  = $item->HoraSalida ? Carbon::parse($item->HoraSalida)->format('H:i:s') : null;
-
-            if ($horaIngreso && $horaIngreso === $horaSalida) {
-                $horaSalida = null;
+        // 2. Ejecutar la consulta pesada y el cálculo de turnos dentro de la caché por 10 minutos
+        $todosLosRegistros = Cache::remember($cacheKey, now()->addMinutes(10), function () use ($validated, $permisos, $fechaInicio, $fechaFin, $inputCi, $usuarioId) {
+            
+            // Obtener el personal autorizado según roles/permisos
+            $empleadosPermitidos = $this->obtenerPersonal($validated, $permisos);
+            if ($empleadosPermitidos->isEmpty()) {
+                return [];
             }
 
-            $fechaAnterior = Carbon::parse($fechaActual)->subDay()->format('Y-m-d');
-            $turnoAnterior = $turnosProgramados[$ciLimpio . '_' . $fechaAnterior] ?? null;
+            $cisPermitidos = $empleadosPermitidos->pluck('ci')
+                ->map(fn($i) => trim((string)$i))
+                ->filter()
+                ->unique()
+                ->values()
+                ->toArray();
 
-            $esSalidaNocturna = false;
-            $turnoEvaluado    = null;
+            $ciObjetivo = null;
+            if (!empty($inputCi)) {
+                $ciObjetivo = trim((string)$inputCi);
+            } elseif (!empty($usuarioId)) {
+                $valorBusqueda = trim((string)$usuarioId);
+                if (strlen($valorBusqueda) >= 5) {
+                    $ciObjetivo = $valorBusqueda;
+                } else {
+                    $ciPersona = DB::table('personas')->where('user_id', $valorBusqueda)->value('carnet_identidad');
+                    $ciObjetivo = $ciPersona ? trim($ciPersona) : $valorBusqueda;
+                }
+            }
 
-            if ($turnoAnterior && $horaIngreso && !$horaSalida) {
-                $hInicioAnt  = $turnoAnterior->hora_inicio ?? null;
-                $hFinAnt     = $turnoAnterior->hora_fin ?? null;
-                $duracionAnt = (float)($turnoAnterior->duracion_horas ?? 0);
+            // Consulta a SQL Server de TODOS los registros del rango (sin paginar aún)
+            $queryAsistencia = DB::connection('sqlsrv_rrhh')
+                ->table('V_asistencia_permisos')
+                ->whereBetween('FechaAsistencia', [$fechaInicio, $fechaFin]);
 
-                if ($hInicioAnt && $hFinAnt) {
-                    $iniCarbon = Carbon::parse($hInicioAnt);
-                    $finCarbon = Carbon::parse($hFinAnt);
+            if ($ciObjetivo !== null) {
+                $queryAsistencia->whereRaw("REPLACE(LTRIM(RTRIM(CI)), ' ', '') = ?", [$ciObjetivo]);
+            } elseif (!$permisos['esSuperAdmin']) {
+                $queryAsistencia->whereIn(DB::raw("REPLACE(LTRIM(RTRIM(CI)), ' ', '')"), $cisPermitidos);
+            }
 
-                    $esTurnoExtendido = ($finCarbon->lessThanOrEqualTo($iniCarbon)) || ($duracionAnt >= 12);
+            $marcaciones = $queryAsistencia->orderBy('FechaAsistencia', 'ASC')->get();
 
-                    if ($esTurnoExtendido) {
-                        $salidaOficialProyectada = Carbon::parse($fechaActual . ' ' . $hFinAnt);
-                        $punchCarbon             = Carbon::parse($fechaActual . ' ' . $horaIngreso);
+            if ($marcaciones->isEmpty()) {
+                return [];
+            }
 
-                        $limiteInferior = (clone $salidaOficialProyectada)->subHours(6);
-                        $limiteSuperior = (clone $salidaOficialProyectada)->addHours(4);
+            // Extraer todos los CIs involucrados para consultar sus turnos asignados
+            $cisEncontrados = $marcaciones->pluck('CI')
+                ->filter()
+                ->map(fn($i) => trim((string)$i))
+                ->unique()
+                ->values()
+                ->toArray();
 
-                        if ($punchCarbon->between($limiteInferior, $limiteSuperior)) {
-                            $horaSalida       = $horaIngreso;
-                            $horaIngreso      = null;
-                            $esSalidaNocturna = true;
-                            $turnoEvaluado    = $turnoAnterior;
+            $fechaInicioConsulta = Carbon::parse($fechaInicio)->subDay()->format('Y-m-d');
+
+            $turnosProgramados = DB::table('turnos_asignados as ta')
+                ->join('users as u', 'ta.usuario_id', '=', 'u.id')
+                ->join('personas as p', 'p.user_id', '=', 'u.id')
+                ->join('turnos as t', 'ta.turno_id', '=', 't.id')
+                ->leftJoin('servicios as s', 'ta.servicio_id', '=', 's.id')
+                ->whereIn(DB::raw('TRIM(p.carnet_identidad)'), $cisEncontrados)
+                ->whereBetween('ta.fecha', [$fechaInicioConsulta, $fechaFin])
+                ->select([
+                    'p.carnet_identidad as ci',
+                    'ta.fecha',
+                    't.nombre_turno',
+                    't.hora_inicio',
+                    't.hora_fin',
+                    't.duracion_horas',
+                    's.nombre as servicio_nombre'
+                ])
+                ->get()
+                ->keyBy(fn($item) => trim((string)$item->ci) . '_' . Carbon::parse($item->fecha)->format('Y-m-d'));
+
+            // Transformar y procesar todos los ítems
+            return $marcaciones->map(function ($item) use ($turnosProgramados) {
+                $fechaActual = Carbon::parse($item->FechaAsistencia)->format('Y-m-d');
+                $ciLimpio    = trim((string)$item->CI);
+
+                $horaIngreso = $item->HoraIngreso ? Carbon::parse($item->HoraIngreso)->format('H:i:s') : null;
+                $horaSalida  = $item->HoraSalida ? Carbon::parse($item->HoraSalida)->format('H:i:s') : null;
+
+                if ($horaIngreso && $horaIngreso === $horaSalida) {
+                    $horaSalida = null;
+                }
+
+                $fechaAnterior = Carbon::parse($fechaActual)->subDay()->format('Y-m-d');
+                $turnoAnterior = $turnosProgramados[$ciLimpio . '_' . $fechaAnterior] ?? null;
+
+                $esSalidaNocturna = false;
+                $turnoEvaluado    = null;
+
+                if ($turnoAnterior && $horaIngreso && !$horaSalida) {
+                    $hInicioAnt  = $turnoAnterior->hora_inicio ?? null;
+                    $hFinAnt     = $turnoAnterior->hora_fin ?? null;
+                    $duracionAnt = (float)($turnoAnterior->duracion_horas ?? 0);
+
+                    if ($hInicioAnt && $hFinAnt) {
+                        $iniCarbon = Carbon::parse($hInicioAnt);
+                        $finCarbon = Carbon::parse($hFinAnt);
+
+                        $esTurnoExtendido = ($finCarbon->lessThanOrEqualTo($iniCarbon)) || ($duracionAnt >= 12);
+
+                        if ($esTurnoExtendido) {
+                            $salidaOficialProyectada = Carbon::parse($fechaActual . ' ' . $hFinAnt);
+                            $punchCarbon             = Carbon::parse($fechaActual . ' ' . $horaIngreso);
+
+                            $limiteInferior = (clone $salidaOficialProyectada)->subHours(6);
+                            $limiteSuperior = (clone $salidaOficialProyectada)->addHours(4);
+
+                            if ($punchCarbon->between($limiteInferior, $limiteSuperior)) {
+                                $horaSalida       = $horaIngreso;
+                                $horaIngreso      = null;
+                                $esSalidaNocturna = true;
+                                $turnoEvaluado    = $turnoAnterior;
+                            }
                         }
                     }
                 }
-            }
 
-            $turnoActual      = $turnosProgramados[$ciLimpio . '_' . $fechaActual] ?? null;
-            $turnoParaCalculo = $esSalidaNocturna ? $turnoEvaluado : $turnoActual;
+                $turnoActual      = $turnosProgramados[$ciLimpio . '_' . $fechaActual] ?? null;
+                $turnoParaCalculo = $esSalidaNocturna ? $turnoEvaluado : $turnoActual;
 
-            $retrasoMinutos     = 0;
-            $salidaTemprana     = false;
-            $minutosTemprano    = 0;
-            $horaEntradaOficial = null;
-            $horaSalidaOficial  = null;
-            $servicioNombre     = 'Sin servicio asignado';
+                $retrasoMinutos     = 0;
+                $salidaTemprana     = false;
+                $minutosTemprano    = 0;
+                $horaEntradaOficial = null;
+                $horaSalidaOficial  = null;
+                $servicioNombre     = 'Sin servicio asignado';
 
-            if ($turnoParaCalculo) {
-                $horaEntradaOficial = $turnoParaCalculo->hora_inicio ?? null;
-                $horaSalidaOficial  = $turnoParaCalculo->hora_fin ?? null;
-                $servicioNombre     = $turnoParaCalculo->servicio_nombre ?? 'General';
-                $duracionCalculo    = (float)($turnoParaCalculo->duracion_horas ?? 0);
+                if ($turnoParaCalculo) {
+                    $horaEntradaOficial = $turnoParaCalculo->hora_inicio ?? null;
+                    $horaSalidaOficial  = $turnoParaCalculo->hora_fin ?? null;
+                    $servicioNombre     = $turnoParaCalculo->servicio_nombre ?? 'General';
+                    $duracionCalculo    = (float)($turnoParaCalculo->duracion_horas ?? 0);
 
-                if ($horaIngreso && $horaEntradaOficial) {
-                    $ingresoCarbon        = Carbon::parse($fechaActual . ' ' . $horaIngreso);
-                    $entradaOficialCarbon = Carbon::parse($fechaActual . ' ' . $horaEntradaOficial);
-                    $limiteTolerancia     = (clone $entradaOficialCarbon)->addMinutes(5)->endOfMinute();
+                    if ($horaIngreso && $horaEntradaOficial) {
+                        $ingresoCarbon        = Carbon::parse($fechaActual . ' ' . $horaIngreso);
+                        $entradaOficialCarbon = Carbon::parse($fechaActual . ' ' . $horaEntradaOficial);
+                        $limiteTolerancia     = (clone $entradaOficialCarbon)->addMinutes(5)->endOfMinute();
 
-                    if ($ingresoCarbon->greaterThan($limiteTolerancia)) {
-                        $retrasoMinutos = (int) floor($entradaOficialCarbon->diffInMinutes($ingresoCarbon, true));
+                        if ($ingresoCarbon->greaterThan($limiteTolerancia)) {
+                            $retrasoMinutos = (int) floor($entradaOficialCarbon->diffInMinutes($ingresoCarbon, true));
+                        }
+                    }
+
+                    if ($horaSalida && $horaSalidaOficial) {
+                        $salidaCarbon        = Carbon::parse($fechaActual . ' ' . $horaSalida);
+                        $salidaOficialCarbon = Carbon::parse($fechaActual . ' ' . $horaSalidaOficial);
+
+                        $esGuardiaLarga = $duracionCalculo >= 18;
+                        $saleDesde09AM  = $salidaCarbon->gte(Carbon::parse($fechaActual . ' 00:09:00'));
+
+                        if ($salidaCarbon->lessThan($salidaOficialCarbon) && !($esGuardiaLarga && $saleDesde09AM)) {
+                            $salidaTemprana  = true;
+                            $minutosTemprano = (int) round($salidaCarbon->diffInMinutes($salidaOficialCarbon, true), 0);
+                        }
                     }
                 }
 
-                if ($horaSalida && $horaSalidaOficial) {
-                    $salidaCarbon        = Carbon::parse($fechaActual . ' ' . $horaSalida);
-                    $salidaOficialCarbon = Carbon::parse($fechaActual . ' ' . $horaSalidaOficial);
-
-                    $esGuardiaLarga = $duracionCalculo >= 18;
-                    $saleDesde09AM  = $salidaCarbon->gte(Carbon::parse($fechaActual . ' 09:00:00'));
-
-                    if ($salidaCarbon->lessThan($salidaOficialCarbon) && !($esGuardiaLarga && $saleDesde09AM)) {
-                        $salidaTemprana  = true;
-                        $minutosTemprano = (int) round($salidaCarbon->diffInMinutes($salidaOficialCarbon, true), 0);
-                    }
+                $estadoTexto = 'A tiempo';
+                if ($retrasoMinutos > 0) {
+                    $estadoTexto = $retrasoMinutos . ' min de retraso';
+                } elseif ($salidaTemprana) {
+                    $estadoTexto = 'Salida antes de hora (' . $minutosTemprano . ' min)';
                 }
-            }
 
-            $estadoTexto = 'A tiempo';
-            if ($retrasoMinutos > 0) {
-                $estadoTexto = $retrasoMinutos . ' min de retraso';
-            } elseif ($salidaTemprana) {
-                $estadoTexto = 'Salida antes de hora (' . $minutosTemprano . ' min)';
-            }
+                return [
+                    'codigo_personal'  => $item->pperCodPer ?? null,
+                    'id_interno'       => $item->pperIdePer ?? null,
+                    'ci'               => $ciLimpio,
+                    'celular'          => $item->pperTelCel ?? null,
+                    'nombre_completo'  => $item->NombreCompleto ?? null,
+                    'fecha_asistencia' => $item->FechaAsistencia,
+                    'hora_ingreso'     => $horaIngreso,
+                    'hora_salida'      => $horaSalida,
+                    'tipo_codigo'      => $item->TipoCodigo ?? null,
+                    'nombre_permiso'   => $item->NombrePermiso ?? null,
+                    'permiso_inicio'   => $item->PermisoFechaInicio ?? null,
+                    'permiso_fin'      => $item->PermisoFechaFin ?? null,
+                    'duracion'         => $item->Duracion ?? null,
+                    'gestiones'        => $item->Gestiones ?? null,
+                    'minutos_retraso'  => $retrasoMinutos,
+                    'tiene_retraso'    => $retrasoMinutos > 0,
+                    'salida_temprana'  => $salidaTemprana,
+                    'minutos_temprano' => $minutosTemprano,
+                    'estado_texto'     => $estadoTexto,
+                    'turno_programado' => [
+                        'nombre'      => $turnoActual->nombre_turno ?? 'Sin Turno Asignado',
+                        'servicio'    => $servicioNombre,
+                        'hora_inicio' => $horaEntradaOficial ? Carbon::parse($horaEntradaOficial)->format('H:i') : null,
+                        'hora_fin'    => $horaSalidaOficial ? Carbon::parse($horaSalidaOficial)->format('H:i') : null,
+                    ]
+                ];
+            })->all();
+        });
 
-            return [
-                'codigo_personal'  => $item->pperCodPer ?? null,
-                'id_interno'       => $item->pperIdePer ?? null,
-                'ci'               => $ciLimpio,
-                'celular'          => $item->pperTelCel ?? null,
-                'nombre_completo'  => $item->NombreCompleto ?? null,
-                'fecha_asistencia' => $item->FechaAsistencia,
-                'hora_ingreso'     => $horaIngreso,
-                'hora_salida'      => $horaSalida,
-                'tipo_codigo'      => $item->TipoCodigo ?? null,
-                'nombre_permiso'   => $item->NombrePermiso ?? null,
-                'permiso_inicio'   => $item->PermisoFechaInicio ?? null,
-                'permiso_fin'      => $item->PermisoFechaFin ?? null,
-                'duracion'         => $item->Duracion ?? null,
-                'gestiones'        => $item->Gestiones ?? null,
-                'minutos_retraso'  => $retrasoMinutos,
-                'tiene_retraso'    => $retrasoMinutos > 0,
-                'salida_temprana'  => $salidaTemprana,
-                'minutos_temprano' => $minutosTemprano,
-                'estado_texto'     => $estadoTexto,
-                'turno_programado' => [
-                    'nombre'      => $turnoActual->nombre_turno ?? 'Sin Turno Asignado',
-                    'servicio'    => $servicioNombre,
-                    'hora_inicio' => $horaEntradaOficial ? Carbon::parse($horaEntradaOficial)->format('H:i') : null,
-                    'hora_fin'    => $horaSalidaOficial ? Carbon::parse($horaSalidaOficial)->format('H:i') : null,
-                ]
-            ];
-        })->values();
+        // 3. Paginar la colección de datos almacenados en caché
+        $coleccion = collect($todosLosRegistros);
+        $total     = $coleccion->count();
 
-        return response()->json(['status' => 'success', 'data' => $resultado]);
+        $registrosPagina = $coleccion->slice(($page - 1) * $perPage, $perPage)->values();
+
+        // 4. Instanciar LengthAwarePaginator para mantener exactamente la misma estructura JSON que Angular espera (current_page, data, total, per_page, etc.)
+        $paginador = new LengthAwarePaginator(
+            $registrosPagina,
+            $total,
+            $perPage,
+            $page,
+            [
+                'path'  => LengthAwarePaginator::resolveCurrentPath(),
+                'query' => $request->query(),
+            ]
+        );
+
+        return response()->json([
+            'status' => 'success',
+            'data'   => $paginador
+        ]);
     }
 
     public function obtenerMatrizAsistencia(Request $request)
@@ -222,32 +285,33 @@ class AsistenciaController extends Controller
         return response()->json(['status' => 'success', 'data' => $data]);
     }
 
- public function generarMatrizPdf(Request $request)
-{
-    ini_set('memory_limit', '1024M');
-    set_time_limit(600);
+    public function generarMatrizPdf(Request $request)
+    {
+        ini_set('memory_limit', '1024M');
+        set_time_limit(600);
 
-    $data = $this->procesarPlanillaAsistencia($request);
-    if (isset($data['error'])) {
-        return response()->json(['message' => $data['error']], $data['code'] ?? 400);
+        $data = $this->procesarPlanillaAsistencia($request);
+        if (isset($data['error'])) {
+            return response()->json(['message' => $data['error']], $data['code'] ?? 400);
+        }
+
+        $pdf = Pdf::loadView('pdf.matriz_asistencia_hospital', $data)
+            ->setPaper('letter', 'landscape')
+            ->setOption([
+                'isRemoteEnabled' => true,
+                'isHtml5ParserEnabled' => true,
+                'isPhpEnabled' => true,
+            ]);
+
+        $filename = 'planilla_asistencia_' . $data['fecha_inicio'] . '.pdf';
+
+        return response()->streamDownload(function () use ($pdf) {
+            echo $pdf->output();
+        }, $filename, [
+            'Content-Type' => 'application/pdf',
+        ]);
     }
 
-    $pdf = Pdf::loadView('pdf.matriz_asistencia_hospital', $data)
-        ->setPaper('letter', 'landscape')
-        ->setOption([
-            'isRemoteEnabled' => true,
-            'isHtml5ParserEnabled' => true,
-            'isPhpEnabled' => true,
-        ]);
-
-    $filename = 'planilla_asistencia_' . $data['fecha_inicio'] . '.pdf';
-
-    return response()->streamDownload(function () use ($pdf) {
-        echo $pdf->output();
-    }, $filename, [
-        'Content-Type' => 'application/pdf',
-    ]);
-}
     private function procesarPlanillaAsistencia(Request $request): array
     {
         $validated = $request->validate([
@@ -276,7 +340,6 @@ class AsistenciaController extends Controller
             return ['error' => 'El personal seleccionado no cuenta con C.I. válido.', 'code' => 422];
         }
 
-        // Consultar marcaciones abarcando 1 día adicional hacia adelante para vincular salidas de guardias de 24h o nocturnas
         $fechaFinConsulta = Carbon::parse($fechaFin)->addDay()->format('Y-m-d');
 
         $marcacionesSql = DB::connection('sqlsrv_rrhh')
@@ -336,11 +399,9 @@ class AsistenciaController extends Controller
             $diasDetalle         = [];
             $observacionesList   = [];
 
-            // Registro de días que corresponden a la salida continuada de una guardia del día anterior
             $diasCubiertosContinuos = [];
 
             foreach ($fechasRango as $fec) {
-                // Si este día es la salida de una guardia iniciada el día previo, no se vuelve a evaluar como entrada nueva
                 if (in_array($fec, $diasCubiertosContinuos)) {
                     $diasDetalle[$fec] = [
                         'estado'          => '',
@@ -362,7 +423,6 @@ class AsistenciaController extends Controller
                 $horaSalida    = isset($marcacion->HoraSalida) ? Carbon::parse($marcacion->HoraSalida)->format('H:i:s') : null;
                 $permisoNombre = $marcacion->NombrePermiso ?? null;
 
-                // Anular salida si la entrada y la salida registradas son idénticas
                 if ($horaIngreso && $horaIngreso === $horaSalida) {
                     $horaSalida = null;
                 }
@@ -370,16 +430,12 @@ class AsistenciaController extends Controller
                 $esFinDeSemana = $carbonFecha->isWeekend();
                 $retrasoMin    = 0;
 
-                // -----------------------------------------------------------------
-                // VINCULACIÓN DE SALIDA AL DÍA SIGUIENTE (Guardias de 24h / Nocturnas)
-                // -----------------------------------------------------------------
                 $fechaSiguiente = $carbonFecha->copy()->addDay()->format('Y-m-d');
                 $keySiguiente   = $ciLimpio . '_' . $fechaSiguiente;
                 $marcacionSig   = ($marcacionesSql[$keySiguiente] ?? collect())->first();
 
                 $esTurnoContinuoCruzado = false;
                 if ($horaIngreso && !$horaSalida && $marcacionSig) {
-                    // Si el día siguiente tiene cualquier marca (salida o primera entrada de la mañana), esa marca es la salida de hoy
                     $punchSalidaSig = $marcacionSig->HoraSalida ?: $marcacionSig->HoraIngreso;
                     if ($punchSalidaSig) {
                         $horaSalida             = Carbon::parse($punchSalidaSig)->format('H:i:s');
@@ -411,7 +467,6 @@ class AsistenciaController extends Controller
                 if ($horaIngreso || $horaSalida) {
                     $diasEfectTrabajados++;
 
-                    // 1. CÁLCULO DE HORAS TRABAJADAS EXACTAS
                     if ($horaIngreso && $horaSalida) {
                         $timeIngreso = Carbon::parse($fec . ' ' . $horaIngreso);
 
@@ -439,23 +494,18 @@ class AsistenciaController extends Controller
                         }
                     }
 
-                    // 2. CÁLCULO DE RETRASO (Solo cuando hay una entrada real de inicio de turno)
-                    // 2. CÁLCULO DE RETRASO (Solo cuando hay una entrada real de inicio de turno)
-if ($horaIngreso && $turnoDia && !empty($turnoDia->hora_inicio)) {
-    $ingresoCarbon        = Carbon::parse($fec . ' ' . $horaIngreso);
-    $entradaOficialCarbon = Carbon::parse($fec . ' ' . $turnoDia->hora_inicio);
-    
-    // Límite exacto de tolerancia (5 minutos)
-    $limiteTolerancia     = (clone $entradaOficialCarbon)->addMinutes(5);
+                    if ($horaIngreso && $turnoDia && !empty($turnoDia->hora_inicio)) {
+                        $ingresoCarbon        = Carbon::parse($fec . ' ' . $horaIngreso);
+                        $entradaOficialCarbon = Carbon::parse($fec . ' ' . $turnoDia->hora_inicio);
+                        $limiteTolerancia     = (clone $entradaOficialCarbon)->addMinutes(5);
 
-    if ($ingresoCarbon->greaterThan($limiteTolerancia)) {
-        // ✔️ Se descuenta únicamente el exceso a partir del minuto 6 (diferencia contra limiteTolerancia)
-        $retrasoMin = (int) floor($limiteTolerancia->diffInMinutes($ingresoCarbon, true));
-        $totalMinutosAtraso += $retrasoMin;
-    } else {
-        $retrasoMin = 0;
-    }
-}
+                        if ($ingresoCarbon->greaterThan($limiteTolerancia)) {
+                            $retrasoMin = (int) floor($limiteTolerancia->diffInMinutes($ingresoCarbon, true));
+                            $totalMinutosAtraso += $retrasoMin;
+                        } else {
+                            $retrasoMin = 0;
+                        }
+                    }
                 } elseif ($turnoDia) {
                     $estadoDia = $permisoNombre ? 'PER' : 'F';
                     if (!$permisoNombre) {
