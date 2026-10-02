@@ -368,6 +368,15 @@ class AsistenciaController extends Controller
             ->get()
             ->groupBy('usuario_id');
 
+            $feriadosGlobales = DB::connection('sqlsrv_rrhh')
+            ->table('V_asistencia_permisos')
+            ->whereBetween('FechaAsistencia', [$fechaInicio, $fechaFin])
+            ->where('TipoJornadaEspecial', '<>', 'Laboral')
+            ->select(['FechaAsistencia', 'DescripcionFeriadoTolerancia', 'TipoJornadaEspecial', 'AlcanceDescripcion'])
+            ->get()
+            ->keyBy(fn($item) => Carbon::parse($item->FechaAsistencia)->format('Y-m-d'));
+
+
         $fechasRango = [];
         $curr = Carbon::parse($fechaInicio);
         $fin  = Carbon::parse($fechaFin);
@@ -438,6 +447,7 @@ class AsistenciaController extends Controller
                 $permisoNombre = $marcacion->NombrePermiso ?? null;
 
                 // --- CAPTURAR NUEVOS CAMPOS DE FERIADOS Y TOLERANCIAS ---
+                $feriadoGlobalDia = $feriadosGlobales[$fec] ?? null;
                 $feriadoDesc   = $marcacion->DescripcionFeriadoTolerancia ?? 'Laboral';
                 $tipoJornada   = $marcacion->TipoJornadaEspecial ?? 'Laboral'; // Ej: Feriado, Tolerancia, Laboral
                 $alcanceDesc   = $marcacion->AlcanceDescripcion ?? 'N/A';
@@ -448,6 +458,9 @@ class AsistenciaController extends Controller
 
                 $esFinDeSemana = $carbonFecha->isWeekend();
                 $retrasoMin    = 0;
+                $estadoDia     = '';
+
+
 
                 $fechaSiguiente = $carbonFecha->copy()->addDay()->format('Y-m-d');
                 $keySiguiente   = $ciLimpio . '_' . $fechaSiguiente;
@@ -460,6 +473,17 @@ class AsistenciaController extends Controller
                         $horaSalida             = Carbon::parse($punchSalidaSig)->format('H:i:s');
                         $diasCubiertosContinuos[] = $fechaSiguiente;
                         $esTurnoContinuoCruzado   = true;
+                    }
+                }
+
+                            if ($tipoJornada === 'Feriado' || $tipoJornada === 'Tolerancia') {
+                    $diasFeriado++;
+                    $estadoDia = strtoupper(substr($tipoJornada, 0, 3)); // 'FER' o 'TOL'
+                    
+                    $fechaFmt = $carbonFecha->format('d/m/Y');
+                    $obsItem = "{$fechaFmt}: {$feriadoDesc} ({$tipoJornada})";
+                    if (!in_array($obsItem, $observacionesList)) {
+                        $observacionesList[] = $obsItem;
                     }
                 }
 
@@ -481,12 +505,17 @@ class AsistenciaController extends Controller
                     }
                 }
 
-                // --- EVALUAR SI ES FERIADO O TOLERANCIA DESDE SQL SERVER ---
-                if ($tipoJornada === 'Feriado' || $tipoJornada === 'Tolerancia') {
-                    $diasFeriado++;
-                    $observacionesList[] = $carbonFecha->format('d/m/Y') . ": {$feriadoDesc} ({$tipoJornada})";
-                }
+              // --- EVALUAR SI ES FERIADO O TOLERANCIA DESDE SQL SERVER ---
+if ($tipoJornada === 'Feriado' || $tipoJornada === 'Tolerancia') {
+    $diasFeriado++;
+    $estadoDia = strtoupper(substr($tipoJornada, 0, 3)); // Esto asigna 'FER' o 'TOL'
+    $fechaFmt = $carbonFecha->format('d/m/Y');
 
+    $obsItem = "{$fechaFmt}: {$feriadoDesc} ({$tipoJornada})";
+    if (!in_array($obsItem, $observacionesList)) {
+        $observacionesList[] = $obsItem;
+    }
+}
                 $estadoDia = '';
 
                 if ($horaIngreso || $horaSalida) {
@@ -536,6 +565,7 @@ class AsistenciaController extends Controller
                     if ($tipoJornada === 'Feriado' || $tipoJornada === 'Tolerancia') {
                         $estadoDia = strtoupper(substr($tipoJornada, 0, 3)); // Ej: FER o TOL
                     } else {
+
                         $estadoDia = $permisoNombre ? 'PER' : 'F';
                         if (!$permisoNombre) {
                             $faltasCount++;

@@ -61,9 +61,12 @@
         .col-totales { width: 26px; font-weight: bold; font-size: 6.5px; }
         .col-obs { width: 80px; font-size: 5.5px; text-align: left; padding-left: 2px; }
         
-        .text-presente { color: #0044cc; font-weight: bold; }
+        /* Estilos específicos para Feriados y Tolerancias en el PDF */
+        .text-feriado { color: #b30000; font-weight: bold; background-color: #f8d7da; }
+        .text-tolerancia { color: #856404; font-weight: bold; background-color: #fff3cd; }
         .text-falta { color: #cc0000; font-weight: bold; }
         .text-permiso { color: #885500; font-weight: bold; }
+        .text-presente { color: #0044cc; }
     </style>
 </head>
 <body>
@@ -108,15 +111,32 @@
                     <td>{{ $emp['ci'] }}</td>
                     <td class="col-nombre">{{ $emp['nombre_completo'] }}</td>
 
+                    {{-- Recorrido de los días del rango para cada empleado --}}
                     @foreach($fechasRango as $fec)
-                        @php 
-                            $infoDia = $emp['dias'][$fec]['estado'] ?? '';
+                        @php
+                            $infoDia = $emp['dias'][$fec] ?? null;
+                            $estadoCelda = $infoDia['estado'] ?? '';
+                            
+                            // Determinamos la clase CSS según el estado devuelto por el backend
+                            $claseEstado = '';
+                            if ($estadoCelda === 'FER') {
+                                $claseEstado = 'text-feriado';
+                            } elseif ($estadoCelda === 'TOL') {
+                                $claseEstado = 'text-tolerancia';
+                            } elseif ($estadoCelda === 'F') {
+                                $claseEstado = 'text-falta';
+                            } elseif ($estadoCelda === 'PER') {
+                                $claseEstado = 'text-permiso';
+                            } else {
+                                $claseEstado = 'text-presente';
+                            }
                         @endphp
-                        <td class="{{ $infoDia === 'F' ? 'text-falta' : ($infoDia === 'PER' ? 'text-permiso' : 'text-presente') }}">
-    {{ $infoDia }}
-</td>
+                        <td class="{{ $claseEstado }}">
+                            {{ $estadoCelda }}
+                        </td>
                     @endforeach
 
+                    {{-- Columnas de Totales y Observaciones fuera del foreach de días --}}
                     <td>{{ $emp['total_minutos_atraso'] > 0 ? $emp['total_minutos_atraso'] : '' }}</td>
                     <td>{{ $emp['total_horas_mes'] > 0 ? $emp['total_horas_mes'] : '' }}</td>
                     <td class="col-obs">{{ $emp['observaciones'] }}</td>
